@@ -1,0 +1,21 @@
+globs:
+  - '**/*.md'
+  - '**/*.markdown'
+ignores:
+  # Independently maintained repositories checked through their own workflows.
+  - 'workspace/**'
+  - '.tools/**'
+  - '**/.git/**'
+  - '**/node_modules/**'
+  - '**/.venv/**'
+  - '**/site/**'
+  - '**/dist/**'
+  - '**/build/**'
+config:
+  MD013: false
+overrides:
+  - filter:
+      - '.github/pull_request_template.md'
+    config:
+      MD041: false
+    combine: merge

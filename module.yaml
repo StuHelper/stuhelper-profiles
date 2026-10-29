@@ -1,0 +1,6 @@
+id: profiles
+version: 0.1.0
+kind: library
+scenario_tests:
+  PC-08:
+    - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
