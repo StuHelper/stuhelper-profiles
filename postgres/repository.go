@@ -40,7 +40,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+closureSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -83,7 +83,7 @@ func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, err
 	var out p.PublicRecord
 	var raw []byte
 	v := &out.Profile
-	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>''`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw)
+	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>'' AND account_state='active'`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw)
 	if errors.Is(e, sql.ErrNoRows) {
 		return out, p.ErrNotFound
 	}
@@ -111,6 +111,13 @@ func (r *Repository) Ensure(ctx context.Context, who p.Principal, name string) (
 			return p.Profile{}, p.ErrUnavailable
 		}
 	}
+	var state string
+	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject).Scan(&state); e != nil {
+		return p.Profile{}, p.ErrUnavailable
+	}
+	if state != "active" {
+		return p.Profile{}, p.ErrClosed
+	}
 	out, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
 	if e != nil {
 		return out, e
@@ -129,6 +136,13 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	current, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
 	if e != nil {
 		return current, e
+	}
+	var state string
+	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject).Scan(&state); e != nil {
+		return current, p.ErrUnavailable
+	}
+	if state != "active" {
+		return current, p.ErrClosed
 	}
 	// Preserve the original nickname-only digest for unknown-result retries from old clients.
 	var b []byte

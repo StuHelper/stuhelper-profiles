@@ -81,8 +81,11 @@ type Repository interface {
 	Update(context.Context, Principal, string, Update) (Profile, error)
 }
 type Service struct {
-	repo  Repository
-	Facts PublicFacts
+	repo             Repository
+	Now              func() time.Time
+	ClosureAuthority ClosureAuthority
+	ClosureEffects   ClosureEffects
+	Facts            PublicFacts
 }
 
 func New(repo Repository) (*Service, error) {
