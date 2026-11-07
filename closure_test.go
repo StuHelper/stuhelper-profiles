@@ -25,6 +25,7 @@ func (closureAuthority) AuthorizeClosure(_ context.Context, who p.Principal) err
 type closureEffects struct {
 	mu      sync.Mutex
 	blocked string
+	skipped []string
 	seen    map[string]bool
 	effects map[string]int
 }
@@ -53,6 +54,9 @@ func (f *closureEffects) RevokeAuthorizations(_ context.Context, _ p.Principal, 
 }
 func (f *closureEffects) AnonymizeContent(_ context.Context, _ p.Principal, id string) error {
 	return f.step("content", id)
+}
+func (f *closureEffects) AnonymizeContentResult(ctx context.Context, who p.Principal, id string) ([]string, error) {
+	return f.skipped, f.AnonymizeContent(ctx, who, id)
 }
 func TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery(t *testing.T) {
 	dsn := os.Getenv("STUHELPER_PROFILES_TEST_DSN")
@@ -172,6 +176,15 @@ func TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery(t *tes
 	if _, e = s.Public(ctx, profile.ID); !errors.Is(e, p.ErrNotFound) {
 		t.Fatal("closed public profile", e)
 	}
+	f.blocked = "content"
+	f.skipped = []string{"reviews"}
+	v, e = s.ProcessClosure(ctx, admin, "process", v.ID)
+	if e != nil || v.Blocker != "content_unavailable" || len(v.SkippedModules) != 1 || v.SkippedModules[0] != "reviews" {
+		t.Fatal("skipped module progress not persisted", v, e)
+	}
+	if _, e = s.ProcessClosure(ctx, bob, "unauthorized-recovery", v.ID); !errors.Is(e, p.ErrForbidden) {
+		t.Fatal("manual recovery bypassed current administrator permission", e)
+	}
 	f.blocked = ""
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
@@ -197,7 +210,7 @@ func TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery(t *tes
 		}
 	}
 	result, e := s.OwnClosure(ctx, alice)
-	if e != nil || result.State != "closed" || len(result.CompletedSteps) != 4 || result.CompletedAt == nil {
+	if e != nil || result.State != "closed" || len(result.CompletedSteps) != 4 || result.CompletedAt == nil || len(result.SkippedModules) != 1 || result.SkippedModules[0] != "reviews" {
 		t.Fatal(result, e)
 	}
 	if _, e = s.Ensure(ctx, alice, "Reopened"); !errors.Is(e, p.ErrClosed) {

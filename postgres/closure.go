@@ -181,7 +181,7 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	}
 	return out, nil
 }
-func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, blocker string, now time.Time) (p.Closure, error) {
+func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, blocker string, skipped []string, now time.Time) (p.Closure, error) {
 	tx, e := r.DB.BeginTx(ctx, nil)
 	if e != nil {
 		return p.Closure{}, p.ErrUnavailable
@@ -209,6 +209,14 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 	steps := []string{"assets", "sessions", "authorizations", "content"}
 	if step < 0 || step >= len(steps) {
 		return out, p.ErrInput
+	}
+	for _, name := range skipped {
+		if name != "reviews" && name != "resources" && name != "favorites" {
+			return out, p.ErrInput
+		}
+	}
+	if step == 3 {
+		out.SkippedModules = skipped
 	}
 	out.Blocker = blocker
 	out.Revision++

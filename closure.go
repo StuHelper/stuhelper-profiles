@@ -23,6 +23,7 @@ type Closure struct {
 	RequestedAt    time.Time  `json:"requested_at"`
 	CoolingEndsAt  time.Time  `json:"cooling_ends_at"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	SkippedModules []string   `json:"skipped_modules,omitempty"`
 	CompletedSteps []string   `json:"completed_steps"`
 	Blocker        string     `json:"blocker"`
 	PointsPolicy   string     `json:"points_policy"`
@@ -49,7 +50,7 @@ type ClosureRepository interface {
 	Closure(context.Context, string) (ClosureRecord, error)
 	Closures(context.Context, string, int) ([]Closure, error)
 	ChangeClosure(context.Context, Principal, string, string, string, time.Time) (Closure, error)
-	AdvanceClosure(context.Context, string, int, string, time.Time) (Closure, error)
+	AdvanceClosure(context.Context, string, int, string, []string, time.Time) (Closure, error)
 	AccountState(context.Context, Principal) (string, error)
 }
 
@@ -171,6 +172,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 	}
 	for step := len(v.CompletedSteps); step < len(closureSteps) && v.State != "closed"; step = len(v.CompletedSteps) {
 		name := closureSteps[step]
+		var skipped []string
 		err := ErrUnavailable
 		if s.ClosureEffects != nil {
 			call, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -182,7 +184,13 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			case "authorizations":
 				err = s.ClosureEffects.RevokeAuthorizations(call, record.Owner, id)
 			case "content":
-				err = s.ClosureEffects.AnonymizeContent(call, record.Owner, id)
+				if effects, ok := s.ClosureEffects.(interface {
+					AnonymizeContentResult(context.Context, Principal, string) ([]string, error)
+				}); ok {
+					skipped, err = effects.AnonymizeContentResult(call, record.Owner, id)
+				} else {
+					err = s.ClosureEffects.AnonymizeContent(call, record.Owner, id)
+				}
 			}
 			cancel()
 		}
@@ -196,7 +204,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 				blocker = "assets_pending"
 			}
 		}
-		v, e = r.AdvanceClosure(ctx, id, step, blocker, s.now())
+		v, e = r.AdvanceClosure(ctx, id, step, blocker, skipped, s.now())
 		if e != nil {
 			return v, e
 		}

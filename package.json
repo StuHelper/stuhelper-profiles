@@ -12,7 +12,8 @@
   },
   "devDependencies": {
     "@stuhelper/engineering-tools": "git+https://github.com/StuHelper/stuhelper-tooling.git#v0.1.0",
-    "lefthook": "2.2.2"
+    "lefthook": "2.2.2",
+    "openapi-typescript": "7.13.0"
   },
   "packageManager": "pnpm@10.33.4",
   "pnpm": {
