@@ -1,6 +1,14 @@
 id: profiles
-version: 0.1.0
+version: 0.3.0
 kind: library
 scenario_tests:
   PC-08:
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
+  PC-05:
+    - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+  PC-10:
+    - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+  PC-07:
+    - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+  PC-09:
+    - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery

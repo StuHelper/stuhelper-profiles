@@ -4,7 +4,11 @@ export GOWORK
 .PHONY: setup check build
 setup:
 	LEFTHOOK=0 pnpm install --frozen-lockfile
-check:
+generate:
+	node scripts/generate.mjs
+check-generated:
+	node scripts/generate.mjs --check
+check: check-generated
 	test -n "$(STUHELPER_PROFILES_TEST_DSN)"
 	pnpm exec stuhelper-check repository
 	test -z "$$(gofmt -l .)"
