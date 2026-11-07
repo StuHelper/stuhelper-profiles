@@ -11,23 +11,17 @@ import (
 )
 
 const Schema = `CREATE SCHEMA IF NOT EXISTS profiles;
-CREATE TABLE IF NOT EXISTS profiles.profiles(issuer text NOT NULL,subject text NOT NULL,nickname text NOT NULL,revision bigint NOT NULL CHECK(revision>0),PRIMARY KEY(issuer,subject));
+CREATE TABLE IF NOT EXISTS profiles.profiles(
+ issuer text NOT NULL,subject text NOT NULL,
+ nickname text NOT NULL CHECK(char_length(nickname)<=20),
+ revision bigint NOT NULL CHECK(revision>0),
+ public_id text NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+ bio text NOT NULL DEFAULT '' CHECK(char_length(bio)<=120),
+ visibility jsonb NOT NULL DEFAULT '{"school":true,"badge":true,"department":true,"grade":false,"reviews":true,"resources":true}',
+ account_state text NOT NULL DEFAULT 'active' CHECK(account_state IN('active','processing','closed')),
+ PRIMARY KEY(issuer,subject));
 CREATE TABLE IF NOT EXISTS profiles.requests(issuer text NOT NULL,subject text NOT NULL,key text NOT NULL,digest text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(issuer,subject,key));
-CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
-ALTER TABLE profiles.profiles ADD COLUMN IF NOT EXISTS public_id text NOT NULL DEFAULT gen_random_uuid()::text;
-ALTER TABLE profiles.profiles ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
-ALTER TABLE profiles.profiles ADD COLUMN IF NOT EXISTS visibility jsonb NOT NULL DEFAULT '{"school":true,"badge":true,"department":true,"grade":false,"reviews":true,"resources":true}';
-CREATE UNIQUE INDEX IF NOT EXISTS profiles_public_id ON profiles.profiles(public_id);
-UPDATE profiles.requests q SET result=q.result||jsonb_build_object('id',p.public_id,'bio','','nickname_required',false,'visibility','{"school":true,"badge":true,"department":true,"grade":false,"reviews":true,"resources":true}'::jsonb)
-FROM profiles.profiles p WHERE q.issuer=p.issuer AND q.subject=p.subject AND NOT(q.result ? 'id');
-DO $migration$ BEGIN
- IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='profiles_nickname_length' AND conrelid='profiles.profiles'::regclass) THEN
- ALTER TABLE profiles.profiles ADD CONSTRAINT profiles_nickname_length CHECK(char_length(nickname)<=20);
- END IF;
- IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='profiles_bio_length' AND conrelid='profiles.profiles'::regclass) THEN
- ALTER TABLE profiles.profiles ADD CONSTRAINT profiles_bio_length CHECK(char_length(bio)<=120);
- END IF;
-END $migration$;`
+CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());`
 
 type Repository struct{ DB *sql.DB }
 
@@ -144,16 +138,7 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	if state != "active" {
 		return current, p.ErrClosed
 	}
-	// Preserve the original nickname-only digest for unknown-result retries from old clients.
-	var b []byte
-	if in.Bio == nil && in.Visibility == nil {
-		b, _ = json.Marshal(struct {
-			Revision int64
-			Name     string
-		}{in.Revision, in.Nickname})
-	} else {
-		b, _ = json.Marshal(in)
-	}
+	b, _ := json.Marshal(in)
 	sum := sha256.Sum256(b)
 	digest := hex.EncodeToString(sum[:])
 	var previous string

@@ -2,9 +2,7 @@ package profiles_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +64,7 @@ func TestPublicProfileDefaultsUnicodeCompletionAndVisibility(t *testing.T) {
 	alice := p.Principal{Issuer: "issuer", Subject: "alice"}
 	bob := p.Principal{Issuer: "issuer", Subject: "bob"}
 	v, e := s.Ensure(ctx, alice, p.InitialNickname(strings.Repeat("长", 21), "username"))
-	if e != nil || v.Nickname != "username" || v.NicknameRequired || v.Visibility != p.DefaultVisibility() {
+	if e != nil || v.Nickname != "username" || v.NicknameRequired || v.Visibility != (p.Visibility{School: true, Badge: true, Department: true, Reviews: true, Resources: true}) {
 		t.Fatal(v, e)
 	}
 	source := &publicFacts{}
@@ -163,22 +161,11 @@ func TestPublicProfileDefaultsUnicodeCompletionAndVisibility(t *testing.T) {
 	if e = owner.QueryRow(`SELECT count(*) FROM profiles.events`).Scan(&count); e != nil || count != 5 {
 		t.Fatal(count, e)
 	}
-	// An old nickname-only idempotency result gains only fields known at that revision.
-	digestBytes := sha256.Sum256([]byte(`{"Revision":1,"Name":"Past"}`))
-	if _, e = owner.Exec(`INSERT INTO profiles.requests VALUES($1,$2,'legacy',$3,'{"nickname":"Past","revision":2}')`, alice.Issuer, alice.Subject, hex.EncodeToString(digestBytes[:])); e != nil {
-		t.Fatal(e)
-	}
-	// Repeated migrations preserve profile IDs, settings and idempotent responses.
+	// Schema initialization is idempotent and keeps current data intact.
 	if e = postgres.Migrate(ctx, owner); e != nil {
 		t.Fatal(e)
 	}
-	if e = postgres.Migrate(ctx, owner); e != nil {
-		t.Fatal(e)
-	}
-	legacy, e := s.Save(ctx, alice, "legacy", 1, "Past")
-	if e != nil || legacy.ID != originalID || legacy.Nickname != "Past" || legacy.Bio != "" || legacy.Visibility != p.DefaultVisibility() {
-		t.Fatal("old replay", legacy, e)
-	}
+
 	again, e := s.Get(ctx, alice)
 	if e != nil || again.ID != originalID || again.Bio != bio || again.Visibility != hidden {
 		t.Fatal(again, e)
