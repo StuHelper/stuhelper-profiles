@@ -1815,11 +1815,22 @@ type GetPublicProfileResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *PublicProfile
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *struct {
+		Code *string `json:"code,omitempty"`
+	}
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r GetPublicProfileResponse) GetJSON200() *PublicProfile {
 	return r.JSON200
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetPublicProfileResponse) GetJSON429() *struct {
+	Code *string `json:"code,omitempty"`
+} {
+	return r.JSON429
 }
 
 // GetBody returns the raw response body bytes
@@ -2576,6 +2587,15 @@ func ParseGetPublicProfileResponse(rsp *http.Response) (*GetPublicProfileRespons
 
 	case rsp.StatusCode == 404:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest struct {
+			Code *string `json:"code,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
 
 	case rsp.StatusCode == 503:
 		break // No content-type

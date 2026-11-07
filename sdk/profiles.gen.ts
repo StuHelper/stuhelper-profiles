@@ -415,6 +415,17 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description 请求过于频繁，稍后重试 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code?: string;
+                    };
+                };
+            };
             /** @description Database unavailable */
             503: {
                 headers: {

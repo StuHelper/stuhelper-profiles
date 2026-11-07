@@ -1,6 +1,33 @@
 id: profiles
-version: 0.3.0
-kind: library
+version: 0.4.0
+kind: module
+api: 1
+critical: false
+requires:
+  - id: platform
+    api: 1
+optional:
+  - id: identity
+    api: 1
+  - id: media
+    api: 1
+  - id: verification
+    api: 1
+  - id: billing
+    api: 1
+  - id: reviews
+    api: 1
+  - id: resources
+    api: 1
+  - id: open-platform
+    api: 1
+capabilities:
+  - profiles.manage
+  - profiles.public
+capability_requires:
+  profiles.manage:
+    - id: identity
+      api: 1
 scenario_tests:
   PC-08:
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole

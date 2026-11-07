@@ -241,6 +241,21 @@
           },
           "503": {
             "description": "Database unavailable"
+          },
+          "429": {
+            "description": "请求过于频繁，稍后重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
