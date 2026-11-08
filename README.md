@@ -8,7 +8,7 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 独立接口契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新本模块 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 使用修订号和幂等键修改。GET /api/v1/profiles/{id} 对游客返回基础主页。发生冲突时返回当前资料，简介和偏好省略时保持原值。
 
-PostgreSQL 的 profiles schema 使用独立迁移身份。运行身份仅访问自己的业务表。迁移补充稳定公开 ID、默认偏好和旧幂等结果的新增字段，不覆盖已有值。旧昵称超过 20 个码点时迁移失败，不能自动截断或静默放宽规则。
+PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问自己的业务表。公开 ID 稳定唯一，昵称限制为 20 个 Unicode 码点，简介限制为 120 个码点。
 
 执行 make check 验证。数据库测试使用 STUHELPER_PROFILES_TEST_DSN 指定的独立数据库，覆盖归属、并发重试、公开字段、昵称补填、Unicode 边界、偏好与重复迁移。本模块不保存登录令牌、实名材料、手机号或学校资格。
 
