@@ -21,6 +21,8 @@ optional:
     api: 1
   - id: open-platform
     api: 1
+  - id: qq-binding
+    api: 1
 capabilities:
   - profiles.manage
   - profiles.public
