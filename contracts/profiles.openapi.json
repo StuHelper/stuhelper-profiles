@@ -881,7 +881,8 @@
           "nickname_required",
           "bio",
           "visibility",
-          "revision"
+          "revision",
+          "group_card_consent"
         ],
         "properties": {
           "nickname": {
@@ -908,6 +909,9 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"
+          },
+          "group_card_consent": {
+            "$ref": "#/components/schemas/GroupCardConsent"
           }
         }
       },
@@ -986,6 +990,9 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"
+          },
+          "group_card_consent": {
+            "$ref": "#/components/schemas/GroupCardConsent"
           }
         }
       },
@@ -1188,6 +1195,43 @@
             "items": {
               "$ref": "#/components/schemas/Closure"
             }
+          }
+        }
+      },
+      "GroupCardConsent": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。",
+        "required": [
+          "school",
+          "grade",
+          "department",
+          "name",
+          "student_id",
+          "gender",
+          "nickname"
+        ],
+        "properties": {
+          "school": {
+            "type": "boolean"
+          },
+          "grade": {
+            "type": "boolean"
+          },
+          "department": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "boolean"
+          },
+          "student_id": {
+            "type": "boolean"
+          },
+          "gender": {
+            "type": "boolean"
+          },
+          "nickname": {
+            "type": "boolean"
           }
         }
       }

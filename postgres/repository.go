@@ -34,7 +34,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+closureSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -53,35 +53,35 @@ type scanner interface{ Scan(...any) error }
 
 func scan(row scanner) (p.Profile, error) {
 	var v p.Profile
-	var raw []byte
-	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw)
+	var raw, consent []byte
+	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
 	if errors.Is(e, sql.ErrNoRows) {
 		return v, p.ErrNotFound
 	}
 	if e != nil {
 		return v, p.ErrUnavailable
 	}
-	if json.Unmarshal(raw, &v.Visibility) != nil {
+	if json.Unmarshal(raw, &v.Visibility) != nil || json.Unmarshal(consent, &v.GroupCardConsent) != nil {
 		return v, p.ErrUnavailable
 	}
 	v.NicknameRequired = v.Nickname == ""
 	return v, nil
 }
 
-const columns = "public_id,nickname,revision,bio,visibility"
+const columns = "public_id,nickname,revision,bio,visibility,group_card_consent"
 
 func (r *Repository) Get(ctx context.Context, who p.Principal) (p.Profile, error) {
 	return scan(r.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
 }
 func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, error) {
 	var out p.PublicRecord
-	var raw []byte
+	var raw, consent []byte
 	v := &out.Profile
-	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>'' AND account_state='active'`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw)
+	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>'' AND account_state='active'`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
 	if errors.Is(e, sql.ErrNoRows) {
 		return out, p.ErrNotFound
 	}
-	if e != nil || json.Unmarshal(raw, &v.Visibility) != nil {
+	if e != nil || json.Unmarshal(raw, &v.Visibility) != nil || json.Unmarshal(consent, &v.GroupCardConsent) != nil {
 		return out, p.ErrUnavailable
 	}
 	return out, nil
@@ -170,9 +170,13 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	if in.Visibility != nil {
 		out.Visibility = *in.Visibility
 	}
+	if in.GroupCardConsent != nil {
+		out.GroupCardConsent = *in.GroupCardConsent
+	}
+	consent, _ := json.Marshal(out.GroupCardConsent)
 	visibility, _ := json.Marshal(out.Visibility)
 	saved, _ = json.Marshal(out)
-	if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET nickname=$3,revision=$4,bio=$5,visibility=$6 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.Nickname, out.Revision, out.Bio, visibility); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET nickname=$3,revision=$4,bio=$5,visibility=$6,group_card_consent=$7 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.Nickname, out.Revision, out.Bio, visibility, consent); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests VALUES($1,$2,$3,$4,$5)`, who.Issuer, who.Subject, key, digest, saved); e != nil {
@@ -186,3 +190,5 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	}
 	return out, nil
 }
+
+const groupCardSchema = `ALTER TABLE profiles.profiles ADD COLUMN IF NOT EXISTS group_card_consent jsonb NOT NULL DEFAULT '{"school":false,"grade":false,"department":false,"name":false,"student_id":false,"gender":false,"nickname":false}';`

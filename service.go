@@ -38,18 +38,20 @@ func DefaultVisibility() Visibility {
 }
 
 type Profile struct {
-	ID               string     `json:"id"`
-	Nickname         string     `json:"nickname"`
-	NicknameRequired bool       `json:"nickname_required"`
-	Bio              string     `json:"bio"`
-	Visibility       Visibility `json:"visibility"`
-	Revision         int64      `json:"revision"`
+	GroupCardConsent GroupCardConsent `json:"group_card_consent"`
+	ID               string           `json:"id"`
+	Nickname         string           `json:"nickname"`
+	NicknameRequired bool             `json:"nickname_required"`
+	Bio              string           `json:"bio"`
+	Visibility       Visibility       `json:"visibility"`
+	Revision         int64            `json:"revision"`
 }
 type Update struct {
-	Nickname   string      `json:"nickname"`
-	Revision   int64       `json:"revision"`
-	Bio        *string     `json:"bio,omitempty"`
-	Visibility *Visibility `json:"visibility,omitempty"`
+	GroupCardConsent *GroupCardConsent `json:"group_card_consent,omitempty"`
+	Nickname         string            `json:"nickname"`
+	Revision         int64             `json:"revision"`
+	Bio              *string           `json:"bio,omitempty"`
+	Visibility       *Visibility       `json:"visibility,omitempty"`
 }
 type Affiliation struct {
 	SchoolID   string `json:"school_id,omitempty"`
@@ -81,6 +83,7 @@ type Repository interface {
 	Update(context.Context, Principal, string, Update) (Profile, error)
 }
 type Service struct {
+	GroupCards       GroupCardProvider
 	repo             Repository
 	Now              func() time.Time
 	ClosureAuthority ClosureAuthority

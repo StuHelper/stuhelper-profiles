@@ -24,6 +24,7 @@ optional:
   - id: qq-binding
     api: 1
 capabilities:
+  - profiles.group_card.read
   - profiles.manage
   - profiles.public
 capability_requires:
@@ -41,3 +42,5 @@ scenario_tests:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+  PC-12:
+    - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction

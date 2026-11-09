@@ -242,10 +242,24 @@ type Error struct {
 	Code string `json:"code"`
 }
 
+// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
+type GroupCardConsent struct {
+	Department bool `json:"department"`
+	Gender     bool `json:"gender"`
+	Grade      bool `json:"grade"`
+	Name       bool `json:"name"`
+	Nickname   bool `json:"nickname"`
+	School     bool `json:"school"`
+	StudentId  bool `json:"student_id"`
+}
+
 // Profile defines model for Profile.
 type Profile struct {
-	Bio string             `json:"bio"`
-	Id  openapi_types.UUID `json:"id"`
+	Bio string `json:"bio"`
+
+	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
+	GroupCardConsent GroupCardConsent   `json:"group_card_consent"`
+	Id               openapi_types.UUID `json:"id"`
 
 	// Nickname Unicode code points; empty only while nickname_required is true.
 	Nickname         string            `json:"nickname"`
@@ -257,6 +271,9 @@ type Profile struct {
 // ProfileUpdate defines model for ProfileUpdate.
 type ProfileUpdate struct {
 	Bio *string `json:"bio,omitempty"`
+
+	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
+	GroupCardConsent *GroupCardConsent `json:"group_card_consent,omitempty"`
 
 	// Nickname Unicode code points, no leading/trailing whitespace or control/private-use characters.
 	Nickname   string             `json:"nickname"`

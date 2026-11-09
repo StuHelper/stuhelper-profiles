@@ -137,6 +137,7 @@ export interface components {
             nickname_required: boolean;
             bio: string;
             visibility: components["schemas"]["ProfileVisibility"];
+            group_card_consent: components["schemas"]["GroupCardConsent"];
         };
         Error: {
             code: string;
@@ -162,6 +163,7 @@ export interface components {
             revision: number;
             bio?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
+            group_card_consent?: components["schemas"]["GroupCardConsent"];
         };
         PublicProfile: {
             /** Format: uuid */
@@ -220,6 +222,16 @@ export interface components {
         };
         ClosurePage: {
             items: components["schemas"]["Closure"][];
+        };
+        /** @description 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。 */
+        GroupCardConsent: {
+            school: boolean;
+            grade: boolean;
+            department: boolean;
+            name: boolean;
+            student_id: boolean;
+            gender: boolean;
+            nickname: boolean;
         };
     };
     responses: never;

@@ -21,3 +21,19 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块，失败与重试都保留进度。当前恢复方式为管理员通过原申请 ID 再次处理，每次校验当前管理权限。管理列表展示 blocker 和 completed_steps，依赖恢复后沿原步骤继续，不自动重新执行资产处置。
 
 业务账号注销通过 qq-binding 公开接口删除三项绑定并关闭后续绑定写入。模块曾安装但暂不可用时等待恢复，只有安装历史明确证明从未安装时才跳过。
+
+## 群名片用途许可
+
+GET /api/v1/profiles/me 的 Profile 新增 group_card_consent，PUT 的 ProfileUpdate 可传同名对象。对象必须包含 school、grade、department、name、student_id、gender、nickname 七个布尔值。默认全 false，省略对象保留原值，与公开主页偏好独立。
+
+修改沿用 revision 和 Idempotency-Key，许可、资料修订、幂等结果与 profiles.events 在同一事务保存。迁移给已有资料添加默认拒绝许可，不覆盖后续设置。公开主页不返回许可。
+
+Service.GroupCardFields(ctx, principal, owner, school, purpose) 返回 map[string]CardField。purpose 仅接受 group_card。每项含 Allowed、Available、Value，拒绝或缺失时 Value 为空。
+
+nickname 来自本模块；其余字段由 GroupCards 端口读取获准来源。
+
+backend 注入 GroupCardProvider：AuthorizeGroupCard 每次验证当前服务身份及学校内 profiles.group_card.read；GroupCardValues 将许可字段转交 verification.GroupCardValues，并转换 Available/Value。不得从请求载荷授予服务能力，撤权后调用立即拒绝。
+
+端口缺失返回 ErrUnavailable，缺失资料返回 ErrNotFound，关闭账号返回 ErrClosed，其他用途或非法 owner 返回 ErrInput，无主体返回 ErrUnauthenticated，学校越权返回 ErrForbidden。来源错误保留，backend 负责按提供方类型映射；失败返回 nil，不使用部分事实。
+
+Go/TypeScript SDK 已按更新后的 OpenAPI 生成。新增 PC-12 数据库测试覆盖许可修改与撤回、字段缺失、学校和服务授权、事件失败回滚及重复迁移。backend 固定本模块与 verification 提交后接入，前端设置控件由客户端任务实现。
