@@ -45,7 +45,7 @@ type CardField struct {
 }
 
 // GroupCardProvider must validate the current service identity and the explicit
-// profiles.group_card.read capability for the school on every call. Values only
+// profiles.group-card.read capability for the school on every call. Values only
 // reads the requested permitted fields through the owning module's public API.
 type GroupCardProvider interface {
 	AuthorizeGroupCard(context.Context, Principal, string) error

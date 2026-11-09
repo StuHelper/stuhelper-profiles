@@ -32,7 +32,7 @@ Service.GroupCardFields(ctx, principal, owner, school, purpose) 返回 map[strin
 
 nickname 来自本模块；其余字段由 GroupCards 端口读取获准来源。
 
-backend 注入 GroupCardProvider：AuthorizeGroupCard 每次验证当前服务身份及学校内 profiles.group_card.read；GroupCardValues 将许可字段转交 verification.GroupCardValues，并转换 Available/Value。不得从请求载荷授予服务能力，撤权后调用立即拒绝。
+backend 注入 GroupCardProvider：AuthorizeGroupCard 每次验证当前服务身份及学校内 profiles.group-card.read；GroupCardValues 将许可字段转交 verification.GroupCardValues，并转换 Available/Value。不得从请求载荷授予服务能力，撤权后调用立即拒绝。
 
 端口缺失返回 ErrUnavailable，缺失资料返回 ErrNotFound，关闭账号返回 ErrClosed，其他用途或非法 owner 返回 ErrInput，无主体返回 ErrUnauthenticated，学校越权返回 ErrForbidden。来源错误保留，backend 负责按提供方类型映射；失败返回 nil，不使用部分事实。
 
