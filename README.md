@@ -37,3 +37,19 @@ backend 注入 GroupCardProvider：AuthorizeGroupCard 每次验证当前服务�
 端口缺失返回 ErrUnavailable，缺失资料返回 ErrNotFound，关闭账号返回 ErrClosed，其他用途或非法 owner 返回 ErrInput，无主体返回 ErrUnauthenticated，学校越权返回 ErrForbidden。来源错误保留，backend 负责按提供方类型映射；失败返回 nil，不使用部分事实。
 
 Go/TypeScript SDK 已按更新后的 OpenAPI 生成。新增 PC-12 数据库测试覆盖许可修改与撤回、字段缺失、学校和服务授权、事件失败回滚及重复迁移。backend 固定本模块与 verification 提交后接入，前端设置控件由客户端任务实现。
+
+## 信息查询端口
+
+提供方使用本包的 Principal、Scope、Query、Record 与 Field，backend 负责转换信息查询 DTO。Query 仅接受 kind=account，Value 是 issuer 与 subject 分别做 base64url 无填充编码后以冒号连接的完整账号键。
+
+`Service.Query(ctx context.Context, principal Principal, q Query) ([]Record, error)` 按 ID 升序返回记录。Limit 为 1–100，After 为排他游标，Fields 按字段名筛选。Purpose 必填，查询值不写日志，Query 的格式化输出脱敏。
+
+宿主注入 InformationAuthority，逐次验证当前能力与目标学校、群范围。空目标仅检查入口能力，具体目标必须核验范围事实。授权前不解密目标资料，过滤范围后才计入分页。缺少能力返回 ErrForbidden，依赖故障返回 ErrUnavailable。
+
+InformationAuthority.AuthorizeInformation 负责拒绝审计。AuditInformation 必须成功持久保存敏感查看审计后才能返回展开字段。请求 ID、渠道与群从可信 context 取得，审计记录用途、内部目标 ID、范围、类别、权限依据、结果和数量，不保存查询值。
+
+OpenAPI 路径与生成 SDK 无变化。这些方法供可信 Go 装配使用，backend 接入需固定提供方提交，注入权限与审计实现，并保持查询入口自身的授权检查。
+
+唯一查询能力为 profiles.information-query。Query 返回 nickname、bio、visibility、group_card_consent，ChangedAt 来自最近一次资料事件。不提供线索解析，不接受敏感字段展开。
+
+公开设置与群名片许可是资料查询字段，群名片许可本身不授予管理员信息查询权。账号没有学校归属字段，宿主授权实现必须通过公开事实核验目标在请求学校或群的范围，不能把请求携带的 Scope 当作授权。

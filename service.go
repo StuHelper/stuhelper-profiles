@@ -83,6 +83,7 @@ type Repository interface {
 	Update(context.Context, Principal, string, Update) (Profile, error)
 }
 type Service struct {
+	Information      InformationAuthority
 	GroupCards       GroupCardProvider
 	repo             Repository
 	Now              func() time.Time

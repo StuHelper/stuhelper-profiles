@@ -24,6 +24,7 @@ optional:
   - id: qq-binding
     api: 1
 capabilities:
+  - profiles.information-query
   - profiles.group-card.read
   - profiles.manage
   - profiles.public
@@ -45,3 +46,5 @@ scenario_tests:
   PC-12:
     - capability_test.go#TestGroupCardCapabilityRegistration
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
+  IQ-02:
+    - information_test.go#TestInformationProfileScopeAndSelection
