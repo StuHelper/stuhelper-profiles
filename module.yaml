@@ -1,0 +1,50 @@
+id: profiles
+version: 0.4.0
+kind: module
+api: 1
+critical: false
+requires:
+  - id: platform
+    api: 1
+optional:
+  - id: identity
+    api: 1
+  - id: media
+    api: 1
+  - id: verification
+    api: 1
+  - id: billing
+    api: 1
+  - id: reviews
+    api: 1
+  - id: resources
+    api: 1
+  - id: open-platform
+    api: 1
+  - id: qq-binding
+    api: 1
+capabilities:
+  - profiles.information-query
+  - profiles.group-card.read
+  - profiles.manage
+  - profiles.public
+capability_requires:
+  profiles.manage:
+    - id: identity
+      api: 1
+scenario_tests:
+  PC-08:
+    - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
+  PC-05:
+    - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+  PC-10:
+    - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+  PC-07:
+    - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+  PC-09:
+    - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+  PC-12:
+    - capability_test.go#TestGroupCardCapabilityRegistration
+    - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
+  IQ-02:
+    - information_test.go#TestInformationProfileScopeAndSelection

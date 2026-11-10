@@ -1,0 +1,1247 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "StuHelper Profiles",
+    "version": "0.4.0"
+  },
+  "paths": {
+    "/api/v1/profiles/me": {
+      "get": {
+        "operationId": "getOwnProfile",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "updateOwnProfile",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict. Current profile lets the caller choose how to resolve it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "current"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "current": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{id}": {
+      "get": {
+        "operationId": "getPublicProfile",
+        "description": "Guest-readable basic profile and current academic facts selected by the owner. Includes no real name, identity document, contact, account identifier or contribution content. Related content requires its own authorized endpoints; unfinished nickname profiles are not published.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public basic profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProfile"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile unavailable"
+          },
+          "503": {
+            "description": "Database unavailable"
+          },
+          "429": {
+            "description": "请求过于频繁，稍后重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profiles/me/closure": {
+      "get": {
+        "operationId": "getOwnClosure",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps."
+      },
+      "post": {
+        "operationId": "requestClosure",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "202": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClosureRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profiles/me/closure/{closure_id}/cancel": {
+      "post": {
+        "operationId": "cancelClosure",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
+        "parameters": [
+          {
+            "name": "closure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/admin/closures/{closure_id}": {
+      "get": {
+        "operationId": "getClosureForAdministration",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
+        "parameters": [
+          {
+            "name": "closure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/admin/closures/{closure_id}/process": {
+      "post": {
+        "operationId": "processClosure",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "202": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
+        "parameters": [
+          {
+            "name": "closure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/admin/closures": {
+      "get": {
+        "operationId": "listClosures",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure"
+          },
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosurePage"
+                }
+              }
+            }
+          }
+        },
+        "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Profile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "nickname",
+          "nickname_required",
+          "bio",
+          "visibility",
+          "revision",
+          "group_card_consent"
+        ],
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Unicode code points; empty only while nickname_required is true."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nickname_required": {
+            "type": "boolean"
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ProfileVisibility"
+          },
+          "group_card_consent": {
+            "$ref": "#/components/schemas/GroupCardConsent"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "ProfileVisibility": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "school",
+          "badge",
+          "department",
+          "grade",
+          "reviews",
+          "resources"
+        ],
+        "properties": {
+          "school": {
+            "type": "boolean",
+            "default": true
+          },
+          "badge": {
+            "type": "boolean",
+            "default": true
+          },
+          "department": {
+            "type": "boolean",
+            "default": true
+          },
+          "grade": {
+            "type": "boolean",
+            "default": false
+          },
+          "reviews": {
+            "type": "boolean",
+            "default": true
+          },
+          "resources": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "ProfileUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nickname",
+          "revision"
+        ],
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20,
+            "description": "Unicode code points, no leading/trailing whitespace or control/private-use characters."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ProfileVisibility"
+          },
+          "group_card_consent": {
+            "$ref": "#/components/schemas/GroupCardConsent"
+          }
+        }
+      },
+      "PublicProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "nickname",
+          "bio",
+          "visibility",
+          "affiliations",
+          "facts_state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nickname": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Unicode code points; empty only while nickname_required is true."
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ProfileVisibility"
+          },
+          "affiliations": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/PublicAffiliation"
+            }
+          },
+          "facts_state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "hidden"
+            ],
+            "description": "Current academic facts; unavailable never prevents reading the basic profile."
+          }
+        }
+      },
+      "PublicAffiliation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "school_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "department": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "grade": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "badge": {
+            "type": "string",
+            "maxLength": 200,
+            "enum": [
+              "student",
+              "teacher"
+            ]
+          }
+        }
+      },
+      "Closure": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "revision",
+          "requested_at",
+          "cooling_ends_at",
+          "completed_steps",
+          "blocker",
+          "points_policy",
+          "profile_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "cooling",
+              "cancelled",
+              "awaiting_assets",
+              "processing",
+              "closed"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cooling_ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "assets",
+                "sessions",
+                "authorizations",
+                "content"
+              ]
+            }
+          },
+          "blocker": {
+            "type": "string",
+            "enum": [
+              "",
+              "assets_unavailable",
+              "assets_pending",
+              "sessions_unavailable",
+              "authorizations_unavailable",
+              "content_unavailable"
+            ]
+          },
+          "points_policy": {
+            "type": "string",
+            "enum": [
+              "forfeit_all_points_and_pending_deductions"
+            ]
+          },
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable application profile identifier. Shared SSO identifiers are not exposed."
+          },
+          "skipped_modules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "reviews",
+                "resources",
+                "favorites"
+              ]
+            },
+            "uniqueItems": true,
+            "description": "经持久安装记录确认从未安装并跳过的模块。缺失或未知记录不能跳过。"
+          }
+        }
+      },
+      "ClosureRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acknowledge_points_forfeiture"
+        ],
+        "properties": {
+          "acknowledge_points_forfeiture": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "The applicant acknowledges that all points and pending deductions are cleared only during final processing, without cash or Ivory conversion."
+          }
+        }
+      },
+      "ClosurePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Closure"
+            }
+          }
+        }
+      },
+      "GroupCardConsent": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。",
+        "required": [
+          "school",
+          "grade",
+          "department",
+          "name",
+          "student_id",
+          "gender",
+          "nickname"
+        ],
+        "properties": {
+          "school": {
+            "type": "boolean"
+          },
+          "grade": {
+            "type": "boolean"
+          },
+          "department": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "boolean"
+          },
+          "student_id": {
+            "type": "boolean"
+          },
+          "gender": {
+            "type": "boolean"
+          },
+          "nickname": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "stuhelper_session"
+      }
+    }
+  }
+}
