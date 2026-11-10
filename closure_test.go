@@ -185,7 +185,10 @@ func TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery(t *tes
 	if _, e = s.ProcessClosure(ctx, bob, "unauthorized-recovery", v.ID); !errors.Is(e, p.ErrForbidden) {
 		t.Fatal("manual recovery bypassed current administrator permission", e)
 	}
+	// The retry no longer reports the earlier skip, for example because the content
+	// dependency cannot read installation history now; the recorded skip must survive.
 	f.blocked = ""
+	f.skipped = nil
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for range 8 {

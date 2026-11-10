@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	p "github.com/StuHelper/stuhelper-profiles"
+	"slices"
 	"time"
 )
 
@@ -215,7 +216,13 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 		}
 	}
 	if step == 3 {
-		out.SkippedModules = skipped
+		// A retry may no longer report an earlier skip, for example when the content
+		// dependency cannot read installation history; confirmed skips are kept.
+		for _, name := range skipped {
+			if !slices.Contains(out.SkippedModules, name) {
+				out.SkippedModules = append(out.SkippedModules, name)
+			}
+		}
 	}
 	out.Blocker = blocker
 	out.Revision++
