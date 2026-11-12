@@ -178,11 +178,23 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			call, cancel := context.WithTimeout(ctx, 3*time.Second)
 			switch name {
 			case "assets":
-				err = s.ClosureEffects.ClearAssets(call, record.Owner, id)
+				if effects, ok := s.ClosureEffects.(interface {
+					ClearAssetsResult(context.Context, Principal, string) ([]string, error)
+				}); ok {
+					skipped, err = effects.ClearAssetsResult(call, record.Owner, id)
+				} else {
+					err = s.ClosureEffects.ClearAssets(call, record.Owner, id)
+				}
 			case "sessions":
 				err = s.ClosureEffects.RevokeSessions(call, record.Owner, id)
 			case "authorizations":
-				err = s.ClosureEffects.RevokeAuthorizations(call, record.Owner, id)
+				if effects, ok := s.ClosureEffects.(interface {
+					RevokeAuthorizationsResult(context.Context, Principal, string) ([]string, error)
+				}); ok {
+					skipped, err = effects.RevokeAuthorizationsResult(call, record.Owner, id)
+				} else {
+					err = s.ClosureEffects.RevokeAuthorizations(call, record.Owner, id)
+				}
 			case "content":
 				if effects, ok := s.ClosureEffects.(interface {
 					AnonymizeContentResult(context.Context, Principal, string) ([]string, error)

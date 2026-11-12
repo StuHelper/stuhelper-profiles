@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper Profiles",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/v1/profiles/me": {
@@ -1156,9 +1156,12 @@
             "items": {
               "type": "string",
               "enum": [
+                "billing",
+                "open-platform",
                 "reviews",
                 "resources",
-                "favorites"
+                "favorites",
+                "qq-binding"
               ]
             },
             "uniqueItems": true,

@@ -89,15 +89,24 @@ func (e ClosurePointsPolicy) Valid() bool {
 
 // Defines values for ClosureSkippedModules.
 const (
-	Favorites ClosureSkippedModules = "favorites"
-	Resources ClosureSkippedModules = "resources"
-	Reviews   ClosureSkippedModules = "reviews"
+	Billing      ClosureSkippedModules = "billing"
+	Favorites    ClosureSkippedModules = "favorites"
+	OpenPlatform ClosureSkippedModules = "open-platform"
+	QqBinding    ClosureSkippedModules = "qq-binding"
+	Resources    ClosureSkippedModules = "resources"
+	Reviews      ClosureSkippedModules = "reviews"
 )
 
 // Valid indicates whether the value is a known member of the ClosureSkippedModules enum.
 func (e ClosureSkippedModules) Valid() bool {
 	switch e {
+	case Billing:
+		return true
 	case Favorites:
+		return true
+	case OpenPlatform:
+		return true
+	case QqBinding:
 		return true
 	case Resources:
 		return true
