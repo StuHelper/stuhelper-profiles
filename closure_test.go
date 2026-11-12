@@ -23,11 +23,12 @@ func (closureAuthority) AuthorizeClosure(_ context.Context, who p.Principal) err
 }
 
 type closureEffects struct {
-	mu      sync.Mutex
-	blocked string
-	skipped []string
-	seen    map[string]bool
-	effects map[string]int
+	mu        sync.Mutex
+	blocked   string
+	skipped   []string
+	stepSkips map[string][]string
+	seen      map[string]bool
+	effects   map[string]int
 }
 
 func (f *closureEffects) step(name, id string) error {
@@ -236,5 +237,88 @@ func TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery(t *tes
 	next, e := s.ListClosures(ctx, admin, page[0].ID, 1)
 	if e != nil || len(next) != 1 || next[0].ID == page[0].ID {
 		t.Fatal(next, e)
+	}
+}
+
+func (f *closureEffects) ClearAssetsResult(ctx context.Context, who p.Principal, id string) ([]string, error) {
+	return f.stepSkips["assets"], f.ClearAssets(ctx, who, id)
+}
+func (f *closureEffects) RevokeAuthorizationsResult(ctx context.Context, who p.Principal, id string) ([]string, error) {
+	return f.stepSkips["authorizations"], f.RevokeAuthorizations(ctx, who, id)
+}
+func TestClosurePersistsSkipsForEveryStep(t *testing.T) {
+	ctx := context.Background()
+	dsn := os.Getenv("STUHELPER_PROFILES_TEST_DSN")
+	if dsn == "" {
+		t.Fatal("isolated database required")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	name := fmt.Sprintf("closure_skips_%d", time.Now().UnixNano())
+	if _, err = db.Exec(`CREATE DATABASE ` + name); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DROP DATABASE ` + name + ` WITH(FORCE)`)
+	owner, err := sql.Open("pgx", dsn+" dbname="+name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	if err = postgres.Migrate(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	repo := &postgres.Repository{DB: owner}
+	svc, _ := p.New(repo)
+	svc.ClosureAuthority = closureAuthority{}
+	now := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
+	svc.Now = func() time.Time { return now }
+	who := p.Principal{Issuer: "https://issuer.invalid", Subject: "skip-owner"}
+	admin := p.Principal{Issuer: who.Issuer, Subject: "admin"}
+	if _, err = svc.Ensure(ctx, who, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := svc.RequestClosure(ctx, who, "request", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = v.CoolingEndsAt
+	f := &closureEffects{blocked: "sessions", seen: map[string]bool{}, effects: map[string]int{}, stepSkips: map[string][]string{"assets": {"billing"}, "authorizations": {"open-platform"}}, skipped: []string{"qq-binding"}}
+	svc.ClosureEffects = f
+	v, err = svc.ProcessClosure(ctx, admin, "process", v.ID)
+	if err != nil || v.Blocker != "sessions_unavailable" || len(v.SkippedModules) != 1 || v.SkippedModules[0] != "billing" {
+		t.Fatal("asset skip not persisted before later failure", v, err)
+	}
+	stored, err := repo.Closure(ctx, v.ID)
+	if err != nil || len(stored.Closure.SkippedModules) != 1 {
+		t.Fatal("skip missing from database", stored, err)
+	}
+	for _, invalid := range []string{"billing", "unknown-module"} {
+		if _, err = repo.AdvanceClosure(ctx, v.ID, 1, "", []string{invalid}, now); !errors.Is(err, p.ErrInput) {
+			t.Fatal("invalid step skip accepted", invalid, err)
+		}
+	}
+	after, err := repo.Closure(ctx, v.ID)
+	if err != nil || after.Closure.Revision != v.Revision {
+		t.Fatal("rejected skip changed record", after, err)
+	}
+	f.blocked = ""
+	v, err = svc.ProcessClosure(ctx, admin, "retry", v.ID)
+	if err != nil || v.State != "closed" || len(v.SkippedModules) != 3 {
+		t.Fatal("all step skips must survive retry", v, err)
+	}
+	for _, module := range []string{"billing", "open-platform", "qq-binding"} {
+		found := false
+		for _, got := range v.SkippedModules {
+			found = found || got == module
+		}
+		if !found {
+			t.Fatal("missing skip", module)
+		}
+	}
+	if f.effects["assets"] != 1 || f.effects["authorizations"] != 1 {
+		t.Fatal("repeated completed step", f.effects)
 	}
 }

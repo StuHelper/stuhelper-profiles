@@ -211,7 +211,7 @@ export interface components {
              */
             profile_id: string;
             /** @description 经持久安装记录确认从未安装并跳过的模块。缺失或未知记录不能跳过。 */
-            skipped_modules?: ("reviews" | "resources" | "favorites")[];
+            skipped_modules?: ("billing" | "open-platform" | "reviews" | "resources" | "favorites" | "qq-binding")[];
         };
         ClosureRequest: {
             /**

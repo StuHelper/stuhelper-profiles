@@ -210,13 +210,14 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 	if step < 0 || step >= len(steps) {
 		return out, p.ErrInput
 	}
+	allowed := [][]string{{"billing"}, {}, {"open-platform"}, {"reviews", "resources", "favorites", "qq-binding"}}
 	for _, name := range skipped {
-		if name != "reviews" && name != "resources" && name != "favorites" {
+		if !slices.Contains(allowed[step], name) {
 			return out, p.ErrInput
 		}
 	}
-	if step == 3 {
-		// A retry may no longer report an earlier skip, for example when the content
+	{
+		// A retry may no longer report an earlier skip, for example when a module
 		// dependency cannot read installation history; confirmed skips are kept.
 		for _, name := range skipped {
 			if !slices.Contains(out.SkippedModules, name) {
