@@ -923,6 +923,14 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "field": {
+            "type": "string",
+            "description": "Optional request field name associated with a validation failure."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional stable validation reason code for localized field messages."
           }
         }
       },
@@ -986,7 +994,8 @@
           },
           "bio": {
             "type": "string",
-            "maxLength": 120
+            "maxLength": 120,
+            "description": "Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected."
           },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"

@@ -39,6 +39,7 @@ scenario_tests:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+    - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery

@@ -249,6 +249,12 @@ type ClosureRequestAcknowledgePointsForfeiture bool
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
+
+	// Field Optional request field name associated with a validation failure.
+	Field *string `json:"field,omitempty"`
+
+	// Reason Optional stable validation reason code for localized field messages.
+	Reason *string `json:"reason,omitempty"`
 }
 
 // GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
@@ -279,6 +285,7 @@ type Profile struct {
 
 // ProfileUpdate defines model for ProfileUpdate.
 type ProfileUpdate struct {
+	// Bio Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected.
 	Bio *string `json:"bio,omitempty"`
 
 	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
