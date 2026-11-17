@@ -6,6 +6,8 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 学校、认证徽章、学院、署名评价和资料默认公开，年级默认不公开。六项都可关闭。公共接口通过 verification 读取当前学校事实，并再次按偏好过滤字段。事实服务故障时保留基础主页，facts_state 标明不可用。接口不返回关联内容、身份材料、绑定、账户标识或资产数据。
 
+PublicBatch 与 PublicByIDs 支持单次最多 100 个去重目标的批量公开资料读取，仅返回有效且已完成昵称填写的公开主页，并支持通过 BatchPublicFacts 批量读取学校与认证徽章事实。
+
 独立接口契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新本模块 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 使用修订号和幂等键修改。GET /api/v1/profiles/{id} 对游客返回基础主页。发生冲突时返回当前资料，简介和偏好省略时保持原值。
 
 PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问自己的业务表。公开 ID 稳定唯一，昵称限制为 20 个 Unicode 码点，简介限制为 120 个码点。
