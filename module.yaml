@@ -42,6 +42,7 @@ scenario_tests:
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - closure_due_test.go#TestClosureAssetsPendingReasonsAndDueClosuresScan
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
   PC-12:

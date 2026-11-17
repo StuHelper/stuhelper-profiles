@@ -13,6 +13,7 @@ import (
 const closureSchema = `
 CREATE TABLE IF NOT EXISTS profiles.closures(id text PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,state text NOT NULL CHECK(state IN('cooling','cancelled','awaiting_assets','processing','closed')),result jsonb NOT NULL,created_at timestamptz NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(issuer,subject) WHERE state<>'cancelled';
+CREATE INDEX IF NOT EXISTS profiles_closures_due_idx ON profiles.closures(created_at ASC,id ASC) WHERE state IN('cooling','awaiting_assets','processing');
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
 `
@@ -182,6 +183,9 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	return out, nil
 }
 func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, blocker string, skipped []string, now time.Time) (p.Closure, error) {
+	return r.AdvanceClosureWithReasons(ctx, id, step, blocker, nil, skipped, now)
+}
+func (r *Repository) AdvanceClosureWithReasons(ctx context.Context, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
 	tx, e := r.DB.BeginTx(ctx, nil)
 	if e != nil {
 		return p.Closure{}, p.ErrUnavailable
@@ -216,6 +220,10 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 			return out, p.ErrInput
 		}
 	}
+	normalizedReasons, ok := p.NormalizePendingReasons(pendingReasons)
+	if !ok || (len(normalizedReasons) > 0 && (step != 0 || blocker != "assets_pending")) {
+		return out, p.ErrInput
+	}
 	{
 		// A retry may no longer report an earlier skip, for example when a module
 		// dependency cannot read installation history; confirmed skips are kept.
@@ -226,6 +234,11 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 		}
 	}
 	out.Blocker = blocker
+	if blocker == "assets_pending" {
+		out.PendingReasons = normalizedReasons
+	} else {
+		out.PendingReasons = nil
+	}
 	out.Revision++
 	if blocker == "" {
 		out.CompletedSteps = append(out.CompletedSteps, steps[step])

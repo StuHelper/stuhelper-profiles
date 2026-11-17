@@ -24,6 +24,7 @@ type Closure struct {
 	CoolingEndsAt  time.Time  `json:"cooling_ends_at"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 	SkippedModules []string   `json:"skipped_modules,omitempty"`
+	PendingReasons []string   `json:"pending_reasons,omitempty"`
 	CompletedSteps []string   `json:"completed_steps"`
 	Blocker        string     `json:"blocker"`
 	PointsPolicy   string     `json:"points_policy"`
@@ -49,6 +50,7 @@ type ClosureRepository interface {
 	CurrentClosure(context.Context, Principal) (Closure, error)
 	Closure(context.Context, string) (ClosureRecord, error)
 	Closures(context.Context, string, int) ([]Closure, error)
+	DueClosures(context.Context, time.Time, int) ([]Closure, error)
 	ChangeClosure(context.Context, Principal, string, string, string, time.Time) (Closure, error)
 	AdvanceClosure(context.Context, string, int, string, []string, time.Time) (Closure, error)
 	AccountState(context.Context, Principal) (string, error)
@@ -173,12 +175,18 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 	for step := len(v.CompletedSteps); step < len(closureSteps) && v.State != "closed"; step = len(v.CompletedSteps) {
 		name := closureSteps[step]
 		var skipped []string
+		var pendingReasons []string
 		err := ErrUnavailable
 		if s.ClosureEffects != nil {
 			call, cancel := context.WithTimeout(ctx, 3*time.Second)
 			switch name {
 			case "assets":
-				if effects, ok := s.ClosureEffects.(interface {
+				if detail, ok := s.ClosureEffects.(AssetsClearanceEffects); ok {
+					var clearance AssetsClearance
+					clearance, err = detail.ClearAssetsDetail(call, record.Owner, id)
+					skipped = clearance.SkippedModules
+					pendingReasons = clearance.PendingReasons
+				} else if effects, ok := s.ClosureEffects.(interface {
 					ClearAssetsResult(context.Context, Principal, string) ([]string, error)
 				}); ok {
 					skipped, err = effects.ClearAssetsResult(call, record.Owner, id)
@@ -214,9 +222,18 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			blocker = name + "_unavailable"
 			if name == "assets" && errors.Is(err, ErrAssetsPending) {
 				blocker = "assets_pending"
+				pendingReasons = extractPendingReasons(pendingReasons, err)
+			} else {
+				pendingReasons = nil
 			}
+		} else {
+			pendingReasons = nil
 		}
-		v, e = r.AdvanceClosure(ctx, id, step, blocker, skipped, s.now())
+		if rr, ok := r.(closureReasonsRepository); ok {
+			v, e = rr.AdvanceClosureWithReasons(ctx, id, step, blocker, pendingReasons, skipped, s.now())
+		} else {
+			v, e = r.AdvanceClosure(ctx, id, step, blocker, skipped, s.now())
+		}
 		if e != nil {
 			return v, e
 		}
@@ -229,6 +246,12 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 func ValidClosureProgress(v Closure) bool {
 	if len(v.CompletedSteps) > len(closureSteps) || !slices.Equal(v.CompletedSteps, closureSteps[:len(v.CompletedSteps)]) {
 		return false
+	}
+	if len(v.PendingReasons) > 0 {
+		normalized, ok := NormalizePendingReasons(v.PendingReasons)
+		if !ok || v.Blocker != "assets_pending" || len(normalized) != len(v.PendingReasons) {
+			return false
+		}
 	}
 	return v.PointsPolicy == PointsPolicy && v.CoolingEndsAt.Equal(v.RequestedAt.Add(7*24*time.Hour)) && (v.State != "closed" || len(v.CompletedSteps) == 4)
 }

@@ -1166,6 +1166,19 @@
             },
             "uniqueItems": true,
             "description": "经持久安装记录确认从未安装并跳过的模块。缺失或未知记录不能跳过。"
+          },
+          "pending_reasons": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "ivory_balance_remaining",
+                "refund_in_progress",
+                "payment_pending_reconciliation"
+              ]
+            },
+            "description": "Sanitized asset settlement blockers when blocker is assets_pending; never includes balances or payment payloads."
           }
         }
       },

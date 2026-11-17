@@ -72,6 +72,27 @@ func (e ClosureCompletedSteps) Valid() bool {
 	}
 }
 
+// Defines values for ClosurePendingReasons.
+const (
+	IvoryBalanceRemaining        ClosurePendingReasons = "ivory_balance_remaining"
+	PaymentPendingReconciliation ClosurePendingReasons = "payment_pending_reconciliation"
+	RefundInProgress             ClosurePendingReasons = "refund_in_progress"
+)
+
+// Valid indicates whether the value is a known member of the ClosurePendingReasons enum.
+func (e ClosurePendingReasons) Valid() bool {
+	switch e {
+	case IvoryBalanceRemaining:
+		return true
+	case PaymentPendingReconciliation:
+		return true
+	case RefundInProgress:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ClosurePointsPolicy.
 const (
 	ForfeitAllPointsAndPendingDeductions ClosurePointsPolicy = "forfeit_all_points_and_pending_deductions"
@@ -205,7 +226,10 @@ type Closure struct {
 	CompletedSteps []ClosureCompletedSteps `json:"completed_steps"`
 	CoolingEndsAt  time.Time               `json:"cooling_ends_at"`
 	Id             openapi_types.UUID      `json:"id"`
-	PointsPolicy   ClosurePointsPolicy     `json:"points_policy"`
+
+	// PendingReasons Sanitized asset settlement blockers when blocker is assets_pending; never includes balances or payment payloads.
+	PendingReasons *[]ClosurePendingReasons `json:"pending_reasons,omitempty"`
+	PointsPolicy   ClosurePointsPolicy      `json:"points_policy"`
 
 	// ProfileId Stable application profile identifier. Shared SSO identifiers are not exposed.
 	ProfileId   openapi_types.UUID `json:"profile_id"`
@@ -222,6 +246,9 @@ type ClosureBlocker string
 
 // ClosureCompletedSteps defines model for Closure.CompletedSteps.
 type ClosureCompletedSteps string
+
+// ClosurePendingReasons defines model for Closure.PendingReasons.
+type ClosurePendingReasons string
 
 // ClosurePointsPolicy defines model for Closure.PointsPolicy.
 type ClosurePointsPolicy string

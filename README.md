@@ -22,6 +22,8 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块，失败与重试都保留进度。当前恢复方式为管理员通过原申请 ID 再次处理，每次校验当前管理权限。管理列表展示 blocker 和 completed_steps，依赖恢复后沿原步骤继续，不自动重新执行资产处置。
 
+资产未结清返回 assets_pending 时，Closure.pending_reasons 可携带脱敏子原因（Ivory 余额未清、退款处理中、待确认支付），不含具体金额，资产结清后自动清空。ClosureRepository 与 Service 预留 DueClosures 按时间升序扫描冷静期满及待重试注销单。
+
 业务账号注销通过 qq-binding 公开接口删除三项绑定并关闭后续绑定写入。模块曾安装但暂不可用时等待恢复，只有安装历史明确证明从未安装时才跳过。
 
 ## 群名片用途许可
