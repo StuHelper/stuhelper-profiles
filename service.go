@@ -42,6 +42,7 @@ type Profile struct {
 	ID               string           `json:"id"`
 	Nickname         string           `json:"nickname"`
 	NicknameRequired bool             `json:"nickname_required"`
+	AvatarVersionID  string           `json:"avatar_version_id,omitempty"`
 	Bio              string           `json:"bio"`
 	Visibility       Visibility       `json:"visibility"`
 	Revision         int64            `json:"revision"`
@@ -50,6 +51,7 @@ type Update struct {
 	GroupCardConsent *GroupCardConsent `json:"group_card_consent,omitempty"`
 	Nickname         string            `json:"nickname"`
 	Revision         int64             `json:"revision"`
+	AvatarVersionID  *string           `json:"avatar_version_id,omitempty"`
 	Bio              *string           `json:"bio,omitempty"`
 	Visibility       *Visibility       `json:"visibility,omitempty"`
 }
@@ -68,12 +70,13 @@ type PublicFacts interface {
 	ProfileFacts(context.Context, Principal, Visibility) ([]Affiliation, error)
 }
 type PublicProfile struct {
-	Affiliations []Affiliation `json:"affiliations"`
-	FactsState   string        `json:"facts_state"`
-	ID           string        `json:"id"`
-	Nickname     string        `json:"nickname"`
-	Bio          string        `json:"bio"`
-	Visibility   Visibility    `json:"visibility"`
+	Affiliations    []Affiliation `json:"affiliations"`
+	FactsState      string        `json:"facts_state"`
+	ID              string        `json:"id"`
+	Nickname        string        `json:"nickname"`
+	AvatarVersionID string        `json:"avatar_version_id,omitempty"`
+	Bio             string        `json:"bio"`
+	Visibility      Visibility    `json:"visibility"`
 }
 type Repository interface {
 	Ready(context.Context) error
@@ -85,6 +88,7 @@ type Repository interface {
 type Service struct {
 	Information      InformationAuthority
 	GroupCards       GroupCardProvider
+	AvatarMedia      AvatarMedia
 	repo             Repository
 	Now              func() time.Time
 	ClosureAuthority ClosureAuthority
@@ -137,6 +141,9 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 	if in.Bio != nil && (!utf8.ValidString(*in.Bio) || utf8.RuneCountInString(*in.Bio) > 120 || strings.ContainsFunc(*in.Bio, func(r rune) bool { return (unicode.IsControl(r) && r != '\n') || unicode.In(r, unicode.Co, unicode.Cs) })) {
 		return Profile{}, ErrInput
 	}
+	if in.AvatarVersionID != nil {
+		return s.updateWithAvatar(ctx, p, key, in)
+	}
 	return s.repo.Update(ctx, p, key, in)
 }
 func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) {
@@ -148,7 +155,7 @@ func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) 
 		return PublicProfile{}, e
 	}
 	v := record.Profile
-	out := PublicProfile{ID: v.ID, Nickname: v.Nickname, Bio: v.Bio, Visibility: v.Visibility, Affiliations: []Affiliation{}, FactsState: "hidden"}
+	out := PublicProfile{ID: v.ID, Nickname: v.Nickname, AvatarVersionID: v.AvatarVersionID, Bio: v.Bio, Visibility: v.Visibility, Affiliations: []Affiliation{}, FactsState: "hidden"}
 	if !v.Visibility.School && !v.Visibility.Badge && !v.Visibility.Department && !v.Visibility.Grade {
 		return out, nil
 	}

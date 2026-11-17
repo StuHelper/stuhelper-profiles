@@ -234,7 +234,7 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 			out.State = "closed"
 			out.CompletedAt = &now
 		}
-		if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3,nickname=CASE WHEN $3='closed' THEN '' ELSE nickname END,bio=CASE WHEN $3='closed' THEN '' ELSE bio END WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
+		if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3,nickname=CASE WHEN $3='closed' THEN '' ELSE nickname END,bio=CASE WHEN $3='closed' THEN '' ELSE bio END,avatar_version_id=CASE WHEN $3='closed' THEN NULL ELSE avatar_version_id END WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
 			return out, p.ErrUnavailable
 		}
 	}

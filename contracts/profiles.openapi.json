@@ -907,6 +907,12 @@
             "type": "string",
             "maxLength": 120
           },
+          "avatar_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Active media version identifier for profile_avatar usage; omitted when unset."
+          },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"
           },
@@ -988,6 +994,11 @@
             "type": "string",
             "maxLength": 120
           },
+          "avatar_version_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Ready owner-uploaded profile_avatar version identifier; pass empty string to clear, omit to keep current avatar."
+          },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"
           },
@@ -1020,6 +1031,12 @@
           "bio": {
             "type": "string",
             "maxLength": 120
+          },
+          "avatar_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Active media version identifier for profile_avatar usage; omitted when unset."
           },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"

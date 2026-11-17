@@ -136,6 +136,8 @@ export interface components {
             id: string;
             nickname_required: boolean;
             bio: string;
+            /** @description Active media version identifier for profile_avatar usage; omitted when unset. */
+            avatar_version_id?: string;
             visibility: components["schemas"]["ProfileVisibility"];
             group_card_consent: components["schemas"]["GroupCardConsent"];
         };
@@ -162,6 +164,8 @@ export interface components {
             /** Format: int64 */
             revision: number;
             bio?: string;
+            /** @description Ready owner-uploaded profile_avatar version identifier; pass empty string to clear, omit to keep current avatar. */
+            avatar_version_id?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
             group_card_consent?: components["schemas"]["GroupCardConsent"];
         };
@@ -171,6 +175,8 @@ export interface components {
             /** @description Unicode code points; empty only while nickname_required is true. */
             nickname: string;
             bio: string;
+            /** @description Active media version identifier for profile_avatar usage; omitted when unset. */
+            avatar_version_id?: string;
             visibility: components["schemas"]["ProfileVisibility"];
             affiliations: components["schemas"]["PublicAffiliation"][];
             /**

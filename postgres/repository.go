@@ -34,7 +34,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+avatarSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -54,7 +54,7 @@ type scanner interface{ Scan(...any) error }
 func scan(row scanner) (p.Profile, error) {
 	var v p.Profile
 	var raw, consent []byte
-	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
+	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent, &v.AvatarVersionID)
 	if errors.Is(e, sql.ErrNoRows) {
 		return v, p.ErrNotFound
 	}
@@ -68,7 +68,7 @@ func scan(row scanner) (p.Profile, error) {
 	return v, nil
 }
 
-const columns = "public_id,nickname,revision,bio,visibility,group_card_consent"
+const columns = "public_id,nickname,revision,bio,visibility,group_card_consent,COALESCE(avatar_version_id,'')"
 
 func (r *Repository) Get(ctx context.Context, who p.Principal) (p.Profile, error) {
 	return scan(r.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
@@ -77,7 +77,7 @@ func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, err
 	var out p.PublicRecord
 	var raw, consent []byte
 	v := &out.Profile
-	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>'' AND account_state='active'`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
+	e := r.DB.QueryRowContext(ctx, `SELECT issuer,subject,`+columns+` FROM profiles.profiles WHERE public_id=$1 AND nickname<>'' AND account_state='active'`, id).Scan(&out.Owner.Issuer, &out.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent, &v.AvatarVersionID)
 	if errors.Is(e, sql.ErrNoRows) {
 		return out, p.ErrNotFound
 	}
@@ -173,11 +173,24 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	if in.GroupCardConsent != nil {
 		out.GroupCardConsent = *in.GroupCardConsent
 	}
+	if in.AvatarVersionID != nil {
+		out.AvatarVersionID = *in.AvatarVersionID
+	}
 	consent, _ := json.Marshal(out.GroupCardConsent)
 	visibility, _ := json.Marshal(out.Visibility)
 	saved, _ = json.Marshal(out)
-	if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET nickname=$3,revision=$4,bio=$5,visibility=$6,group_card_consent=$7 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.Nickname, out.Revision, out.Bio, visibility, consent); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET nickname=$3,revision=$4,bio=$5,visibility=$6,group_card_consent=$7,avatar_version_id=NULLIF($8,'') WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.Nickname, out.Revision, out.Bio, visibility, consent, out.AvatarVersionID); e != nil {
 		return out, p.ErrUnavailable
+	}
+	if out.AvatarVersionID != "" {
+		if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.avatar_releases WHERE issuer=$1 AND subject=$2 AND version_id=$3`, who.Issuer, who.Subject, out.AvatarVersionID); e != nil {
+			return out, p.ErrUnavailable
+		}
+	}
+	if current.AvatarVersionID != "" && current.AvatarVersionID != out.AvatarVersionID {
+		if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.avatar_releases(issuer,subject,profile_id,version_id) VALUES($1,$2,$3,$4) ON CONFLICT(issuer,subject,version_id) DO NOTHING`, who.Issuer, who.Subject, out.ID, current.AvatarVersionID); e != nil {
+			return out, p.ErrUnavailable
+		}
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests VALUES($1,$2,$3,$4,$5)`, who.Issuer, who.Subject, key, digest, saved); e != nil {
 		return out, p.ErrUnavailable

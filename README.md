@@ -1,6 +1,6 @@
 # StuHelper Profiles
 
-profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，按 issuer 与 subject 保留归属。昵称最多 20 个 Unicode 码点，简介最多 120 个。账号注销编排已实现，头像引用尚未实现。
+profiles 拥有公开昵称、头像引用、简介、公开主页 ID 和六项展示偏好，按 issuer 与 subject 保留归属。昵称最多 20 个 Unicode 码点，简介最多 120 个。头像通过 AvatarMedia 端口校验本人已就绪的 profile_avatar 版本并管理引用生命周期，替换、清除及账号注销自动释放引用。
 
 首次登录依次尝试合规的 SSO 显示名、用户名。两者都不合规时保存待填写昵称状态，登录成功，基础主页暂不公开。本人完成昵称后可以读取公开主页，后续 SSO 登录不覆盖用户修改。
 
@@ -52,6 +52,6 @@ InformationAuthority.AuthorizeInformation 负责拒绝审计。AuditInformation 
 
 OpenAPI 路径与生成 SDK 无变化。这些方法供可信 Go 装配使用，backend 接入需固定提供方提交，注入权限与审计实现，并保持查询入口自身的授权检查。
 
-唯一查询能力为 profiles.information-query。Query 返回 nickname、bio、visibility、group_card_consent，ChangedAt 来自最近一次资料事件。不提供线索解析，不接受敏感字段展开。
+唯一查询能力为 profiles.information-query。Query 返回 nickname、avatar_version_id、bio、visibility、group_card_consent，ChangedAt 来自最近一次资料事件。不提供线索解析，不接受敏感字段展开。
 
 公开设置与群名片许可是资料查询字段，群名片许可本身不授予管理员信息查询权。账号没有学校归属字段，宿主授权实现必须通过公开事实核验目标在请求学校或群的范围，不能把请求携带的 Scope 当作授权。

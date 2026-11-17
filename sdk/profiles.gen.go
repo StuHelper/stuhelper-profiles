@@ -264,7 +264,9 @@ type GroupCardConsent struct {
 
 // Profile defines model for Profile.
 type Profile struct {
-	Bio string `json:"bio"`
+	// AvatarVersionId Active media version identifier for profile_avatar usage; omitted when unset.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+	Bio             string  `json:"bio"`
 
 	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
 	GroupCardConsent GroupCardConsent   `json:"group_card_consent"`
@@ -279,7 +281,9 @@ type Profile struct {
 
 // ProfileUpdate defines model for ProfileUpdate.
 type ProfileUpdate struct {
-	Bio *string `json:"bio,omitempty"`
+	// AvatarVersionId Ready owner-uploaded profile_avatar version identifier; pass empty string to clear, omit to keep current avatar.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+	Bio             *string `json:"bio,omitempty"`
 
 	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
 	GroupCardConsent *GroupCardConsent `json:"group_card_consent,omitempty"`
@@ -315,7 +319,10 @@ type PublicAffiliationBadge string
 // PublicProfile defines model for PublicProfile.
 type PublicProfile struct {
 	Affiliations []PublicAffiliation `json:"affiliations"`
-	Bio          string              `json:"bio"`
+
+	// AvatarVersionId Active media version identifier for profile_avatar usage; omitted when unset.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+	Bio             string  `json:"bio"`
 
 	// FactsState Current academic facts; unavailable never prevents reading the basic profile.
 	FactsState PublicProfileFactsState `json:"facts_state"`
