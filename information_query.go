@@ -53,5 +53,5 @@ func (s *Service) Query(ctx context.Context, p Principal, q Query) ([]Record, er
 	scope := q.Scope
 	scope.Module = "profiles"
 	out := []Record{{ID: profile.ID, Subject: q.Value, Scope: scope, Source: "profiles", Current: true, ChangedAt: changedAt, Fields: []Field{{Name: "nickname", Category: "business", Value: profile.Nickname}, {Name: "bio", Category: "business", Value: profile.Bio}, {Name: "visibility", Category: "business", Value: string(visibility)}, {Name: "group_card_consent", Category: "business", Value: string(consent)}}}}
-	return s.informationFields(ctx, p, q, out)
+	return filterInformationFields(q, out)
 }

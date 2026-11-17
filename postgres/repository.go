@@ -51,27 +51,29 @@ func (r *Repository) CheckRuntime(ctx context.Context) error {
 
 type scanner interface{ Scan(...any) error }
 
-func scan(row scanner) (p.Profile, error) {
+func scanWithState(row scanner) (p.Profile, string, error) {
 	var v p.Profile
+	var state string
 	var raw, consent []byte
-	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
+	e := row.Scan(&state, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent)
 	if errors.Is(e, sql.ErrNoRows) {
-		return v, p.ErrNotFound
+		return v, "", p.ErrNotFound
 	}
 	if e != nil {
-		return v, p.ErrUnavailable
+		return v, "", p.ErrUnavailable
 	}
 	if json.Unmarshal(raw, &v.Visibility) != nil || json.Unmarshal(consent, &v.GroupCardConsent) != nil {
-		return v, p.ErrUnavailable
+		return v, "", p.ErrUnavailable
 	}
 	v.NicknameRequired = v.Nickname == ""
-	return v, nil
+	return v, state, nil
 }
 
 const columns = "public_id,nickname,revision,bio,visibility,group_card_consent"
 
 func (r *Repository) Get(ctx context.Context, who p.Principal) (p.Profile, error) {
-	return scan(r.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
+	v, _, e := scanWithState(r.DB.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
+	return v, e
 }
 func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, error) {
 	var out p.PublicRecord
@@ -105,16 +107,12 @@ func (r *Repository) Ensure(ctx context.Context, who p.Principal, name string) (
 			return p.Profile{}, p.ErrUnavailable
 		}
 	}
-	var state string
-	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject).Scan(&state); e != nil {
-		return p.Profile{}, p.ErrUnavailable
+	out, state, e := scanWithState(tx.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
+	if e != nil {
+		return out, e
 	}
 	if state != "active" {
 		return p.Profile{}, p.ErrClosed
-	}
-	out, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
-	if e != nil {
-		return out, e
 	}
 	if e = tx.Commit(); e != nil {
 		return p.Profile{}, p.ErrUnavailable
@@ -127,13 +125,9 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 		return p.Profile{}, p.ErrUnavailable
 	}
 	defer tx.Rollback()
-	current, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
+	current, state, e := scanWithState(tx.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
 	if e != nil {
 		return current, e
-	}
-	var state string
-	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject).Scan(&state); e != nil {
-		return current, p.ErrUnavailable
 	}
 	if state != "active" {
 		return current, p.ErrClosed

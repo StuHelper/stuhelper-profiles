@@ -30,32 +30,16 @@ type Query struct {
 	Limit          int
 	After          string
 }
-type Lead struct {
-	Kind, Value string
-	Scope       Scope
-	Purpose     string
-	Limit       int
-	After       string
-}
-type Candidate struct {
-	Account, Source string
-	Current         bool
-	ChangedAt       time.Time
-	Scope           Scope
-	Label           []Field
-}
 
 func (q Query) String() string   { return "information query [redacted]" }
 func (q Query) GoString() string { return q.String() }
-func (l Lead) String() string    { return "information lead [redacted]" }
-func (l Lead) GoString() string  { return l.String() }
 
 // InformationAuthority is supplied by the host. It checks current domain grants
 // and target membership in the requested school/group, never treating a caller's
 // scope as a grant. Empty target checks admission only. Denials must be audited
-// by AuthorizeInformation using a sanitized reason code. Audit must durably record
-// actor, request ID, purpose, internal targets, scope, categories, permission basis,
-// channel, result and count. Request/channel metadata comes from trusted context.
+// by AuthorizeInformation using a sanitized reason code. AuditInformation keeps
+// the shared cross-module authority adapter signature, while profiles owns only
+// business-category fields and rejects sensitive category expansion.
 type InformationAuthority interface {
 	AuthorizeInformation(context.Context, Principal, string, Scope, string) error
 	AuditInformation(context.Context, Principal, string, Scope, []string, []string) error
@@ -103,7 +87,7 @@ func informationInput(q Query, max int) error {
 	}
 	return nil
 }
-func (s *Service) informationFields(ctx context.Context, p Principal, q Query, records []Record) ([]Record, error) {
+func filterInformationFields(q Query, records []Record) ([]Record, error) {
 	selected := map[string]bool{}
 	for _, f := range q.Fields {
 		if selected[f] || f == "" {
@@ -111,42 +95,18 @@ func (s *Service) informationFields(ctx context.Context, p Principal, q Query, r
 		}
 		selected[f] = true
 	}
-	expanded := map[string]bool{}
-	for _, cat := range q.Expand {
-		if expanded[cat] || (cat != "identity" && cat != "document" && cat != "material") {
-			return nil, ErrInput
-		}
-		expanded[cat] = true
-		if e := s.informationAuthorize(ctx, p, "information-"+cat, q.Scope, ""); e != nil {
-			return nil, e
-		}
+	if len(selected) == 0 {
+		return records, nil
 	}
-	targets := []string{}
 	for i := range records {
 		r := &records[i]
-		for cat := range expanded {
-			if e := s.informationAuthorize(ctx, p, "information-"+cat, r.Scope, r.Subject); e != nil {
-				return nil, e
-			}
-		}
-		fields := []Field{}
+		fields := make([]Field, 0, len(r.Fields))
 		for _, f := range r.Fields {
-			if len(selected) > 0 && !selected[f.Name] {
-				continue
+			if selected[f.Name] {
+				fields = append(fields, f)
 			}
-			if f.Category != "business" && !expanded[f.Category] {
-				f.Value = "***"
-				f.Masked = true
-			}
-			fields = append(fields, f)
 		}
 		r.Fields = fields
-		targets = append(targets, r.ID)
-	}
-	if len(expanded) > 0 {
-		if e := s.Information.AuditInformation(ctx, p, q.Purpose, q.Scope, targets, q.Expand); e != nil {
-			return nil, ErrUnavailable
-		}
 	}
 	return records, nil
 }

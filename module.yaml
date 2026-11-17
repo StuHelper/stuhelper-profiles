@@ -49,3 +49,4 @@ scenario_tests:
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
+    - service_unit_test.go#TestServiceUnitInputBoundariesPortsAndConcurrencyWithoutDatabase
