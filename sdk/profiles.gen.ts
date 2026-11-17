@@ -20,6 +20,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/me/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes. */
+        post: operations["previewOwnProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/{id}": {
         parameters: {
             query?: never;
@@ -164,6 +181,13 @@ export interface components {
             bio?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
             group_card_consent?: components["schemas"]["GroupCardConsent"];
+        };
+        ProfilePreview: {
+            /** @description Draft nickname; omit to use the saved nickname, or pass empty string while nickname_required is true. */
+            nickname?: string;
+            /** @description Draft bio; omit to use the saved bio. */
+            bio?: string;
+            visibility?: components["schemas"]["ProfileVisibility"];
         };
         PublicProfile: {
             /** Format: uuid */
@@ -378,6 +402,86 @@ export interface operations {
                         code: string;
                         current: components["schemas"]["Profile"];
                     };
+                };
+            };
+            /** @description Capacity exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewOwnProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfilePreview"];
+            };
+        };
+        responses: {
+            /** @description Synthesized public profile preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicProfile"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden or invalid CSRF */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Profile not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Capacity exceeded */

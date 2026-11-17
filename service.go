@@ -147,51 +147,7 @@ func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) 
 	if e != nil {
 		return PublicProfile{}, e
 	}
-	v := record.Profile
-	out := PublicProfile{ID: v.ID, Nickname: v.Nickname, Bio: v.Bio, Visibility: v.Visibility, Affiliations: []Affiliation{}, FactsState: "hidden"}
-	if !v.Visibility.School && !v.Visibility.Badge && !v.Visibility.Department && !v.Visibility.Grade {
-		return out, nil
-	}
-	out.FactsState = "unavailable"
-	if s.Facts == nil {
-		return out, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	facts, e := s.Facts.ProfileFacts(ctx, record.Owner, v.Visibility)
-	if e != nil || len(facts) > 100 {
-		return out, nil
-	}
-	filtered := []Affiliation{}
-	for _, fact := range facts {
-		if !v.Visibility.School {
-			fact.SchoolID = ""
-			fact.SchoolName = ""
-		}
-		if !v.Visibility.Badge {
-			fact.Badge = ""
-		}
-		if !v.Visibility.Department {
-			fact.Department = ""
-		}
-		if !v.Visibility.Grade {
-			fact.Grade = ""
-		}
-		for _, value := range []string{fact.SchoolID, fact.SchoolName, fact.Department, fact.Grade} {
-			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, unicode.IsControl) {
-				return out, nil
-			}
-		}
-		if fact.Badge != "" && fact.Badge != "student" && fact.Badge != "teacher" {
-			return out, nil
-		}
-		if fact != (Affiliation{}) {
-			filtered = append(filtered, fact)
-		}
-	}
-	out.Affiliations = filtered
-	out.FactsState = "available"
-	return out, nil
+	return s.composePublicProfile(ctx, record.Owner, record.Profile), nil
 }
 
 // All six flags are required so an incomplete update cannot silently clear consent.
