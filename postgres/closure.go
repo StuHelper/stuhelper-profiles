@@ -13,8 +13,12 @@ import (
 const closureSchema = `
 CREATE TABLE IF NOT EXISTS profiles.closures(id text PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,state text NOT NULL CHECK(state IN('cooling','cancelled','awaiting_assets','processing','closed')),result jsonb NOT NULL,created_at timestamptz NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(issuer,subject) WHERE state<>'cancelled';
+CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
+CREATE INDEX IF NOT EXISTS profiles_closures_state_created_id_idx ON profiles.closures(state,created_at ASC,id ASC);
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS profiles_closure_events_created_id_idx ON profiles.closure_events(created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_id_idx ON profiles.closure_events(closure_id,created_at DESC,id DESC);
 `
 
 func (r *Repository) AccountState(ctx context.Context, who p.Principal) (string, error) {
@@ -28,17 +32,24 @@ func (r *Repository) AccountState(ctx context.Context, who p.Principal) (string,
 	}
 	return state, nil
 }
-func closureScan(row scanner) (p.ClosureRecord, error) {
-	var v p.ClosureRecord
-	var raw []byte
-	e := row.Scan(&v.Owner.Issuer, &v.Owner.Subject, &raw)
-	if errors.Is(e, sql.ErrNoRows) {
-		return v, p.ErrNotFound
-	}
-	if e != nil || json.Unmarshal(raw, &v.Closure) != nil || !p.ValidClosureProgress(v.Closure) {
+func decodeClosureRow(owner p.Principal, raw []byte) (p.ClosureRecord, error) {
+	v := p.ClosureRecord{Owner: owner}
+	if json.Unmarshal(raw, &v.Closure) != nil || !p.ValidClosureProgress(v.Closure) {
 		return v, p.ErrUnavailable
 	}
 	return v, nil
+}
+func closureScan(row scanner) (p.ClosureRecord, error) {
+	var owner p.Principal
+	var raw []byte
+	e := row.Scan(&owner.Issuer, &owner.Subject, &raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return p.ClosureRecord{}, p.ErrNotFound
+	}
+	if e != nil {
+		return p.ClosureRecord{}, p.ErrUnavailable
+	}
+	return decodeClosureRow(owner, raw)
 }
 func (r *Repository) Closure(ctx context.Context, id string) (p.ClosureRecord, error) {
 	return closureScan(r.DB.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id=$1`, id))
@@ -48,20 +59,8 @@ func (r *Repository) CurrentClosure(ctx context.Context, who p.Principal) (p.Clo
 	return v.Closure, e
 }
 func (r *Repository) Closures(ctx context.Context, after string, limit int) ([]p.Closure, error) {
-	rows, e := r.DB.QueryContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id>$1 ORDER BY id LIMIT $2`, after, limit)
-	if e != nil {
-		return nil, p.ErrUnavailable
-	}
-	defer rows.Close()
-	out := []p.Closure{}
-	for rows.Next() {
-		v, e := closureScan(rows)
-		if e != nil {
-			return nil, e
-		}
-		out = append(out, v.Closure)
-	}
-	return out, rows.Err()
+	page, e := r.QueryClosures(ctx, p.ClosureFilter{After: after, Limit: limit}, time.Now().UTC())
+	return page.Items, e
 }
 func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, action, id string, now time.Time) (p.Closure, error) {
 	var out p.Closure

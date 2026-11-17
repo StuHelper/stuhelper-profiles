@@ -20,28 +20,28 @@ import (
 
 // Defines values for ClosureBlocker.
 const (
-	AssetsPending             ClosureBlocker = "assets_pending"
-	AssetsUnavailable         ClosureBlocker = "assets_unavailable"
-	AuthorizationsUnavailable ClosureBlocker = "authorizations_unavailable"
-	ContentUnavailable        ClosureBlocker = "content_unavailable"
-	Empty                     ClosureBlocker = ""
-	SessionsUnavailable       ClosureBlocker = "sessions_unavailable"
+	ClosureBlockerAssetsPending             ClosureBlocker = "assets_pending"
+	ClosureBlockerAssetsUnavailable         ClosureBlocker = "assets_unavailable"
+	ClosureBlockerAuthorizationsUnavailable ClosureBlocker = "authorizations_unavailable"
+	ClosureBlockerContentUnavailable        ClosureBlocker = "content_unavailable"
+	ClosureBlockerEmpty                     ClosureBlocker = ""
+	ClosureBlockerSessionsUnavailable       ClosureBlocker = "sessions_unavailable"
 )
 
 // Valid indicates whether the value is a known member of the ClosureBlocker enum.
 func (e ClosureBlocker) Valid() bool {
 	switch e {
-	case AssetsPending:
+	case ClosureBlockerAssetsPending:
 		return true
-	case AssetsUnavailable:
+	case ClosureBlockerAssetsUnavailable:
 		return true
-	case AuthorizationsUnavailable:
+	case ClosureBlockerAuthorizationsUnavailable:
 		return true
-	case ContentUnavailable:
+	case ClosureBlockerContentUnavailable:
 		return true
-	case Empty:
+	case ClosureBlockerEmpty:
 		return true
-	case SessionsUnavailable:
+	case ClosureBlockerSessionsUnavailable:
 		return true
 	default:
 		return false
@@ -119,25 +119,25 @@ func (e ClosureSkippedModules) Valid() bool {
 
 // Defines values for ClosureState.
 const (
-	AwaitingAssets ClosureState = "awaiting_assets"
-	Cancelled      ClosureState = "cancelled"
-	Closed         ClosureState = "closed"
-	Cooling        ClosureState = "cooling"
-	Processing     ClosureState = "processing"
+	ClosureStateAwaitingAssets ClosureState = "awaiting_assets"
+	ClosureStateCancelled      ClosureState = "cancelled"
+	ClosureStateClosed         ClosureState = "closed"
+	ClosureStateCooling        ClosureState = "cooling"
+	ClosureStateProcessing     ClosureState = "processing"
 )
 
 // Valid indicates whether the value is a known member of the ClosureState enum.
 func (e ClosureState) Valid() bool {
 	switch e {
-	case AwaitingAssets:
+	case ClosureStateAwaitingAssets:
 		return true
-	case Cancelled:
+	case ClosureStateCancelled:
 		return true
-	case Closed:
+	case ClosureStateClosed:
 		return true
-	case Cooling:
+	case ClosureStateCooling:
 		return true
-	case Processing:
+	case ClosureStateProcessing:
 		return true
 	default:
 		return false
@@ -198,6 +198,60 @@ func (e PublicProfileFactsState) Valid() bool {
 	}
 }
 
+// Defines values for ListClosuresParamsState.
+const (
+	ListClosuresParamsStateAwaitingAssets ListClosuresParamsState = "awaiting_assets"
+	ListClosuresParamsStateCancelled      ListClosuresParamsState = "cancelled"
+	ListClosuresParamsStateClosed         ListClosuresParamsState = "closed"
+	ListClosuresParamsStateCooling        ListClosuresParamsState = "cooling"
+	ListClosuresParamsStateProcessing     ListClosuresParamsState = "processing"
+)
+
+// Valid indicates whether the value is a known member of the ListClosuresParamsState enum.
+func (e ListClosuresParamsState) Valid() bool {
+	switch e {
+	case ListClosuresParamsStateAwaitingAssets:
+		return true
+	case ListClosuresParamsStateCancelled:
+		return true
+	case ListClosuresParamsStateClosed:
+		return true
+	case ListClosuresParamsStateCooling:
+		return true
+	case ListClosuresParamsStateProcessing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListClosuresParamsBlocker.
+const (
+	ListClosuresParamsBlockerAssetsPending             ListClosuresParamsBlocker = "assets_pending"
+	ListClosuresParamsBlockerAssetsUnavailable         ListClosuresParamsBlocker = "assets_unavailable"
+	ListClosuresParamsBlockerAuthorizationsUnavailable ListClosuresParamsBlocker = "authorizations_unavailable"
+	ListClosuresParamsBlockerContentUnavailable        ListClosuresParamsBlocker = "content_unavailable"
+	ListClosuresParamsBlockerSessionsUnavailable       ListClosuresParamsBlocker = "sessions_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ListClosuresParamsBlocker enum.
+func (e ListClosuresParamsBlocker) Valid() bool {
+	switch e {
+	case ListClosuresParamsBlockerAssetsPending:
+		return true
+	case ListClosuresParamsBlockerAssetsUnavailable:
+		return true
+	case ListClosuresParamsBlockerAuthorizationsUnavailable:
+		return true
+	case ListClosuresParamsBlockerContentUnavailable:
+		return true
+	case ListClosuresParamsBlockerSessionsUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Closure defines model for Closure.
 type Closure struct {
 	Blocker        ClosureBlocker          `json:"blocker"`
@@ -235,6 +289,9 @@ type ClosureState string
 // ClosurePage defines model for ClosurePage.
 type ClosurePage struct {
 	Items []Closure `json:"items"`
+
+	// NextCursor Exclusive cursor for the next page ordered by (created_at ASC, id ASC).
+	NextCursor *openapi_types.UUID `json:"next_cursor,omitempty"`
 }
 
 // ClosureRequest defines model for ClosureRequest.
@@ -331,9 +388,20 @@ type PublicProfileFactsState string
 
 // ListClosuresParams defines parameters for ListClosures.
 type ListClosuresParams struct {
-	After *openapi_types.UUID `form:"after,omitempty" json:"after,omitempty"`
-	Limit *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	After *openapi_types.UUID      `form:"after,omitempty" json:"after,omitempty"`
+	Limit *int                     `form:"limit,omitempty" json:"limit,omitempty"`
+	State *ListClosuresParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Actionable When true, returns only closures ready for approval after the seven-day cooling period or awaiting retry.
+	Actionable *bool                      `form:"actionable,omitempty" json:"actionable,omitempty"`
+	Blocker    *ListClosuresParamsBlocker `form:"blocker,omitempty" json:"blocker,omitempty"`
 }
+
+// ListClosuresParamsState defines parameters for ListClosures.
+type ListClosuresParamsState string
+
+// ListClosuresParamsBlocker defines parameters for ListClosures.
+type ListClosuresParamsBlocker string
 
 // ProcessClosureParams defines parameters for ProcessClosure.
 type ProcessClosureParams struct {
@@ -696,6 +764,42 @@ func NewListClosuresRequest(server string, params *ListClosuresParams) (*http.Re
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Actionable != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "actionable", *params.Actionable, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Blocker != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "blocker", *params.Blocker, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

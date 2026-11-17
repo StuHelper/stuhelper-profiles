@@ -139,7 +139,7 @@ func (s *Service) ListClosures(ctx context.Context, p Principal, after string, l
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return nil, e
 	}
-	if limit < 1 || limit > 100 || (after != "" && len(after) != 36) {
+	if limit < 1 || limit > 100 || (after != "" && !validClosureUUID(after)) {
 		return nil, ErrInput
 	}
 	r, e := s.closureRepository()
