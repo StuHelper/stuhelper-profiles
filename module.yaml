@@ -35,6 +35,7 @@ capability_requires:
 scenario_tests:
   PC-08:
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
+    - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
   PC-05:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
   PC-10:
@@ -42,6 +43,7 @@ scenario_tests:
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
   PC-12:

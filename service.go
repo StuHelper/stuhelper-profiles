@@ -137,6 +137,9 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 	if in.Bio != nil && (!utf8.ValidString(*in.Bio) || utf8.RuneCountInString(*in.Bio) > 120 || strings.ContainsFunc(*in.Bio, func(r rune) bool { return (unicode.IsControl(r) && r != '\n') || unicode.In(r, unicode.Co, unicode.Cs) })) {
 		return Profile{}, ErrInput
 	}
+	if r, ok := s.repo.(updateAtRepository); ok {
+		return r.UpdateAt(ctx, p, key, in, s.now())
+	}
 	return s.repo.Update(ctx, p, key, in)
 }
 func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) {
