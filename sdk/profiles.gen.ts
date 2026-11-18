@@ -158,6 +158,10 @@ export interface components {
         };
         Error: {
             code: string;
+            /** @description Optional request field name associated with a validation failure. */
+            field?: string;
+            /** @description Optional stable validation reason code for localized field messages. */
+            reason?: string;
         };
         ProfileVisibility: {
             /** @default true */
@@ -178,6 +182,7 @@ export interface components {
             nickname: string;
             /** Format: int64 */
             revision: number;
+            /** @description Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected. */
             bio?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
             group_card_consent?: components["schemas"]["GroupCardConsent"];
@@ -304,15 +309,6 @@ export interface operations {
             };
             /** @description Forbidden or invalid CSRF */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Revision or idempotency conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -529,7 +525,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             /** @description 请求过于频繁，稍后重试 */
             429: {
@@ -537,9 +535,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        code?: string;
-                    };
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Database unavailable */
@@ -547,7 +543,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -601,13 +599,6 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Revision or idempotency conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
@@ -637,6 +628,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
+                "X-CSRF-Token": string;
             };
             path?: never;
             cookie?: never;
@@ -688,7 +680,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             /** @description Revision or idempotency conflict */
             409: {
@@ -724,6 +718,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
+                "X-CSRF-Token": string;
             };
             path: {
                 closure_id: string;
@@ -773,7 +768,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             /** @description Revision or idempotency conflict */
             409: {
@@ -856,13 +853,6 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Revision or idempotency conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
@@ -892,6 +882,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
+                "X-CSRF-Token": string;
             };
             path: {
                 closure_id: string;
@@ -941,7 +932,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             /** @description Revision or idempotency conflict */
             409: {
@@ -1022,13 +1015,6 @@ export interface operations {
             };
             /** @description No matching closure */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Revision or idempotency conflict */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };

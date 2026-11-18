@@ -126,6 +126,18 @@ func TestOwnProfileDraftPreviewWithoutDatabaseMutation(t *testing.T) {
 		t.Fatal("expected ErrInput for overlong draft nickname", e)
 	}
 
+	invalidBio := "before\u202eafter"
+	if _, err := s.Preview(ctx, pendingUser, p.Preview{Bio: &invalidBio}); !errors.Is(err, p.ErrInput) {
+		t.Fatalf("invalid draft: %v", err)
+	}
+	if _, err := s.Update(ctx, pendingUser, "invalid-bio", p.Update{Nickname: draftName, Revision: pendingProf.Revision, Bio: &invalidBio}); !errors.Is(err, p.ErrInput) {
+		t.Fatalf("invalid update: %v", err)
+	}
+	saved, err := s.Update(ctx, pendingUser, "save-bio", p.Update{Nickname: draftName, Revision: pendingProf.Revision, Bio: &draftBio})
+	if err != nil || saved.Bio != prev.Bio {
+		t.Fatalf("saved bio %q differs from preview %q: %v", saved.Bio, prev.Bio, err)
+	}
+
 	// 3. Closed account cannot preview.
 	cl, e := s.RequestClosure(ctx, alice, "close-alice", true)
 	if e != nil {

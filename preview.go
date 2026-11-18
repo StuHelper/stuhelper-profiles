@@ -52,7 +52,7 @@ func (s *Service) composePublicProfile(ctx context.Context, owner Principal, v P
 			fact.Grade = ""
 		}
 		for _, value := range []string{fact.SchoolID, fact.SchoolName, fact.Department, fact.Grade} {
-			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, unicode.IsControl) {
+			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || isBidiControl(r) }) {
 				return out
 			}
 		}
@@ -93,11 +93,9 @@ func (s *Service) Preview(ctx context.Context, p Principal, in Preview) (PublicP
 		draft.Nickname = *in.Nickname
 	}
 	if in.Bio != nil {
-		bio := strings.ReplaceAll(*in.Bio, "\r\n", "\n")
-		if !utf8.ValidString(bio) || utf8.RuneCountInString(bio) > 120 || strings.ContainsFunc(bio, func(r rune) bool {
-			return (unicode.IsControl(r) && r != '\n') || unicode.In(r, unicode.Co, unicode.Cs)
-		}) {
-			return PublicProfile{}, ErrInput
+		bio := NormalizeBio(*in.Bio)
+		if err := ValidateBio(bio); err != nil {
+			return PublicProfile{}, err
 		}
 		draft.Bio = bio
 	}
