@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS profiles.profiles(
  account_state text NOT NULL DEFAULT 'active' CHECK(account_state IN('active','processing','closed')),
  PRIMARY KEY(issuer,subject));
 CREATE TABLE IF NOT EXISTS profiles.requests(issuer text NOT NULL,subject text NOT NULL,key text NOT NULL,digest text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(issuer,subject,key));
-CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());`
+CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS profiles_events_owner_created_idx ON profiles.events(issuer,subject,created_at DESC);
+CREATE INDEX IF NOT EXISTS profiles_events_owner_id_idx ON profiles.events(issuer,subject,id DESC);`
 
 type Repository struct{ DB *sql.DB }
 
@@ -72,8 +74,14 @@ func scanWithState(row scanner) (p.Profile, string, error) {
 const columns = "public_id,nickname,revision,bio,visibility,group_card_consent"
 
 func (r *Repository) Get(ctx context.Context, who p.Principal) (p.Profile, error) {
-	v, _, e := scanWithState(r.DB.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
-	return v, e
+	v, state, e := scanWithState(r.DB.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
+	if e != nil {
+		return v, e
+	}
+	if state != "active" {
+		return p.Profile{}, p.ErrClosed
+	}
+	return v, nil
 }
 func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, error) {
 	var out p.PublicRecord
