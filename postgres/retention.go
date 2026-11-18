@@ -12,11 +12,13 @@ CREATE INDEX IF NOT EXISTS profiles_requests_created_idx ON profiles.requests(cr
 ALTER TABLE profiles.closure_requests ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS profiles_closure_requests_created_idx ON profiles.closure_requests(created_at);
 ALTER TABLE profiles.closures ADD COLUMN IF NOT EXISTS updated_at timestamptz;
-UPDATE profiles.closures SET updated_at=COALESCE((result->>'completed_at')::timestamptz,created_at) WHERE updated_at IS NULL;
+-- Preserve at least the promised retention when older history lacks a cancellation event.
+UPDATE profiles.closures c SET updated_at=CASE WHEN c.state='cancelled' THEN
+ COALESCE((SELECT max(e.created_at) FROM profiles.closure_events e WHERE e.closure_id=c.id AND e.action='cancel'),current_timestamp)
+ ELSE COALESCE((c.result->>'completed_at')::timestamptz,c.created_at) END WHERE c.updated_at IS NULL;
 ALTER TABLE profiles.closures ALTER COLUMN updated_at SET NOT NULL;
 ALTER TABLE profiles.closures ALTER COLUMN updated_at SET DEFAULT now();
 CREATE INDEX IF NOT EXISTS profiles_closures_retention_idx ON profiles.closures(updated_at,id) WHERE state IN('closed','cancelled');
-CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_idx ON profiles.closure_events(closure_id);
 `
 
 func (r *Repository) CleanupExpired(ctx context.Context, now time.Time, batchLimit int) (p.CleanupResult, error) {

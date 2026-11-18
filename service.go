@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -20,8 +21,45 @@ var (
 
 type Principal struct{ Issuer, Subject string }
 
+func isBidiControl(r rune) bool {
+	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069)
+}
+
+func validUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validIdempotencyKey(k string) bool {
+	if len(k) < 1 || len(k) > 128 {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7E {
+			return false
+		}
+	}
+	return true
+}
+
 func (p Principal) Valid() bool {
-	return p.Issuer != "" && p.Subject != "" && len(p.Issuer) <= 512 && len(p.Subject) <= 256
+	return p.Issuer != "" && p.Subject != "" && len(p.Issuer) <= 512 && len(p.Subject) <= 256 &&
+		utf8.ValidString(p.Issuer) && utf8.ValidString(p.Subject) &&
+		!strings.ContainsFunc(p.Issuer, unicode.IsControl) && !strings.ContainsFunc(p.Subject, unicode.IsControl)
 }
 
 type Visibility struct {
@@ -90,6 +128,8 @@ type Service struct {
 	ClosureAuthority ClosureAuthority
 	ClosureEffects   ClosureEffects
 	Facts            PublicFacts
+	closureMu        sync.Mutex
+	closureTurns     map[string]chan struct{}
 }
 
 func New(repo Repository) (*Service, error) {
@@ -99,7 +139,7 @@ func New(repo Repository) (*Service, error) {
 	return &Service{repo: repo}, nil
 }
 func ValidName(name string) bool {
-	return name == strings.TrimSpace(name) && utf8.ValidString(name) && utf8.RuneCountInString(name) >= 1 && utf8.RuneCountInString(name) <= 20 && !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Co, unicode.Cs) })
+	return ValidateNickname(name) == nil
 }
 
 // InitialNickname validates each source independently and never changes SSO.
@@ -114,7 +154,7 @@ func InitialNickname(displayName, username string) string {
 func (s *Service) Ready(ctx context.Context) error { return s.repo.Ready(ctx) }
 func (s *Service) Get(ctx context.Context, p Principal) (Profile, error) {
 	if !p.Valid() {
-		return Profile{}, ErrInput
+		return Profile{}, inputError("principal", "principal_invalid")
 	}
 	return s.repo.Get(ctx, p)
 }
@@ -122,8 +162,13 @@ func (s *Service) Get(ctx context.Context, p Principal) (Profile, error) {
 // An empty initial name records the explicit completion state without failing login.
 // Ensure never overwrites a profile created during an earlier login.
 func (s *Service) Ensure(ctx context.Context, p Principal, name string) (Profile, error) {
-	if !p.Valid() || (name != "" && !ValidName(name)) {
-		return Profile{}, ErrInput
+	if !p.Valid() {
+		return Profile{}, inputError("principal", "principal_invalid")
+	}
+	if name != "" {
+		if err := ValidateNickname(name); err != nil {
+			return Profile{}, err
+		}
 	}
 	return s.repo.Ensure(ctx, p, name)
 }
@@ -131,11 +176,24 @@ func (s *Service) Save(ctx context.Context, p Principal, key string, revision in
 	return s.Update(ctx, p, key, Update{Nickname: name, Revision: revision})
 }
 func (s *Service) Update(ctx context.Context, p Principal, key string, in Update) (Profile, error) {
-	if !p.Valid() || len(key) < 1 || len(key) > 128 || in.Revision < 1 || !ValidName(in.Nickname) {
-		return Profile{}, ErrInput
+	if !p.Valid() {
+		return Profile{}, inputError("principal", "principal_invalid")
 	}
-	if in.Bio != nil && (!utf8.ValidString(*in.Bio) || utf8.RuneCountInString(*in.Bio) > 120 || strings.ContainsFunc(*in.Bio, func(r rune) bool { return (unicode.IsControl(r) && r != '\n') || unicode.In(r, unicode.Co, unicode.Cs) })) {
-		return Profile{}, ErrInput
+	if !validIdempotencyKey(key) {
+		return Profile{}, inputError("idempotency_key", "idempotency_key_invalid")
+	}
+	if in.Revision < 1 {
+		return Profile{}, inputError("revision", "revision_invalid")
+	}
+	if err := ValidateNickname(in.Nickname); err != nil {
+		return Profile{}, err
+	}
+	if in.Bio != nil {
+		normalized := NormalizeBio(*in.Bio)
+		if err := ValidateBio(normalized); err != nil {
+			return Profile{}, err
+		}
+		in.Bio = &normalized
 	}
 	if r, ok := s.repo.(updateAtRepository); ok {
 		return r.UpdateAt(ctx, p, key, in, s.now())
@@ -143,71 +201,27 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 	return s.repo.Update(ctx, p, key, in)
 }
 func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) {
-	if len(id) != 36 || strings.ContainsAny(id, "/\\ \n") {
+	if !validUUID(id) {
 		return PublicProfile{}, ErrNotFound
 	}
 	record, e := s.repo.Public(ctx, id)
 	if e != nil {
 		return PublicProfile{}, e
 	}
-	v := record.Profile
-	out := PublicProfile{ID: v.ID, Nickname: v.Nickname, Bio: v.Bio, Visibility: v.Visibility, Affiliations: []Affiliation{}, FactsState: "hidden"}
-	if !v.Visibility.School && !v.Visibility.Badge && !v.Visibility.Department && !v.Visibility.Grade {
-		return out, nil
-	}
-	out.FactsState = "unavailable"
-	if s.Facts == nil {
-		return out, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	facts, e := s.Facts.ProfileFacts(ctx, record.Owner, v.Visibility)
-	if e != nil || len(facts) > 100 {
-		return out, nil
-	}
-	filtered := []Affiliation{}
-	for _, fact := range facts {
-		if !v.Visibility.School {
-			fact.SchoolID = ""
-			fact.SchoolName = ""
-		}
-		if !v.Visibility.Badge {
-			fact.Badge = ""
-		}
-		if !v.Visibility.Department {
-			fact.Department = ""
-		}
-		if !v.Visibility.Grade {
-			fact.Grade = ""
-		}
-		for _, value := range []string{fact.SchoolID, fact.SchoolName, fact.Department, fact.Grade} {
-			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, unicode.IsControl) {
-				return out, nil
-			}
-		}
-		if fact.Badge != "" && fact.Badge != "student" && fact.Badge != "teacher" {
-			return out, nil
-		}
-		if fact != (Affiliation{}) {
-			filtered = append(filtered, fact)
-		}
-	}
-	out.Affiliations = filtered
-	out.FactsState = "available"
-	return out, nil
+	return s.resolvePublicRecords(ctx, []PublicRecord{record})[0], nil
 }
 
 // All six flags are required so an incomplete update cannot silently clear consent.
 func (v *Visibility) UnmarshalJSON(b []byte) error {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(b, &fields) != nil || len(fields) != 6 {
-		return ErrInput
+		return inputError("visibility", "visibility_invalid")
 	}
 	values := map[string]*bool{"school": &v.School, "badge": &v.Badge, "department": &v.Department, "grade": &v.Grade, "reviews": &v.Reviews, "resources": &v.Resources}
 	for key, target := range values {
 		raw, ok := fields[key]
 		if !ok || string(raw) == "null" || json.Unmarshal(raw, target) != nil {
-			return ErrInput
+			return inputError("visibility", "visibility_invalid")
 		}
 	}
 	return nil

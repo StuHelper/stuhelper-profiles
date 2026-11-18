@@ -101,6 +101,24 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 		t.Fatal(e)
 	}
 
+	// Older schemas lacked updated_at. Cancellation history starts at the
+	// recorded cancellation, including when it happened days after the request.
+	if _, e = owner.Exec("ALTER TABLE profiles.closures ALTER COLUMN updated_at DROP NOT NULL"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = owner.Exec("UPDATE profiles.closures SET updated_at=NULL WHERE id=$1", cCancelled.ID); e != nil {
+		t.Fatal(e)
+	}
+	for range 2 {
+		if e = postgres.Migrate(ctx, owner); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var restored time.Time
+	if e = owner.QueryRow("SELECT updated_at FROM profiles.closures WHERE id=$1", cCancelled.ID).Scan(&restored); e != nil || !restored.Equal(now) {
+		t.Fatalf("cancelled history timestamp %v, want %v: %v", restored, now, e)
+	}
+
 	// 3. pendingUser remains in cooling/incomplete state older than 12 months: must NEVER be deleted!
 	now = time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC)
 	cPending, e := s.RequestClosure(ctx, pendingUser, "req-pending", true)

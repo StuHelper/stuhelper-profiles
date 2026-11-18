@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -27,12 +28,12 @@ type GroupCardConsent struct {
 func (v *GroupCardConsent) UnmarshalJSON(b []byte) error {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(b, &m) != nil || len(m) != 7 {
-		return ErrInput
+		return inputError("group_card_consent", "group_card_consent_invalid")
 	}
 	for k, p := range map[string]*bool{"school": &v.School, "grade": &v.Grade, "department": &v.Department, "name": &v.Name, "student_id": &v.StudentID, "gender": &v.Gender, "nickname": &v.Nickname} {
 		raw, ok := m[k]
 		if !ok || string(raw) == "null" || json.Unmarshal(raw, p) != nil {
-			return ErrInput
+			return inputError("group_card_consent", "group_card_consent_invalid")
 		}
 	}
 	return nil
@@ -57,7 +58,7 @@ func (s *Service) GroupCardFields(ctx context.Context, principal Principal, owne
 		return nil, ErrUnauthenticated
 	}
 	parts := strings.Split(owner, ":")
-	if len(parts) != 2 || school == "" || len(school) > 64 || purpose != GroupCardPurpose {
+	if len(parts) != 2 || strings.TrimSpace(school) == "" || len(school) > 64 || !utf8.ValidString(school) || strings.ContainsFunc(school, unicode.IsControl) || purpose != GroupCardPurpose {
 		return nil, ErrInput
 	}
 	values := make([]string, 2)
@@ -88,12 +89,24 @@ func (s *Service) GroupCardFields(ctx context.Context, principal Principal, owne
 		return nil, e
 	}
 	c := profile.GroupCardConsent
-	out := map[string]CardField{}
-	requested := []string{}
-	for k, allowed := range map[string]bool{"school": c.School, "grade": c.Grade, "department": c.Department, "name": c.Name, "student_id": c.StudentID, "gender": c.Gender, "nickname": c.Nickname} {
-		out[k] = CardField{Allowed: allowed}
-		if allowed && k != "nickname" {
-			requested = append(requested, k)
+	ordered := []struct {
+		name    string
+		allowed bool
+	}{
+		{"school", c.School},
+		{"grade", c.Grade},
+		{"department", c.Department},
+		{"name", c.Name},
+		{"student_id", c.StudentID},
+		{"gender", c.Gender},
+		{"nickname", c.Nickname},
+	}
+	out := make(map[string]CardField, len(ordered))
+	requested := make([]string, 0, len(ordered)-1)
+	for _, entry := range ordered {
+		out[entry.name] = CardField{Allowed: entry.allowed}
+		if entry.allowed && entry.name != "nickname" {
+			requested = append(requested, entry.name)
 		}
 	}
 	if c.Nickname {
@@ -109,7 +122,7 @@ func (s *Service) GroupCardFields(ctx context.Context, principal Principal, owne
 			if !f.Available {
 				continue
 			}
-			if len(f.Value) > 2048 || !utf8.ValidString(f.Value) || (k == "gender" && f.Value != "male" && f.Value != "female" && f.Value != "unknown") {
+			if f.Value == "" || !utf8.ValidString(f.Value) || utf8.RuneCountInString(f.Value) > 200 || strings.ContainsFunc(f.Value, func(r rune) bool { return unicode.IsControl(r) || isBidiControl(r) }) || (k == "gender" && f.Value != "male" && f.Value != "female" && f.Value != "unknown") {
 				return nil, ErrUnavailable
 			}
 			out[k] = CardField{true, true, f.Value}
