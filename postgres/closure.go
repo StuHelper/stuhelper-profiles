@@ -233,9 +233,25 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 		if len(out.CompletedSteps) == 4 {
 			out.State = "closed"
 			out.CompletedAt = &now
-		}
-		if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3,nickname=CASE WHEN $3='closed' THEN '' ELSE nickname END,bio=CASE WHEN $3='closed' THEN '' ELSE bio END WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
-			return out, p.ErrUnavailable
+			visibility, _ := json.Marshal(p.DefaultVisibility())
+			consent, _ := json.Marshal(p.GroupCardConsent{})
+			var rev int64
+			if e = tx.QueryRowContext(ctx, `UPDATE profiles.profiles SET account_state='closed',nickname='',bio='',visibility=$3,group_card_consent=$4,revision=revision+1 WHERE issuer=$1 AND subject=$2 RETURNING revision`, who.Issuer, who.Subject, visibility, consent).Scan(&rev); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2`, who.Issuer, who.Subject); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.events(issuer,subject,revision,kind,created_at) VALUES($1,$2,$3,'closed',$4)`, who.Issuer, who.Subject, rev, now); e != nil {
+				return out, p.ErrUnavailable
+			}
+		} else {
+			if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
+				return out, p.ErrUnavailable
+			}
 		}
 	}
 	raw, _ := json.Marshal(out)

@@ -12,7 +12,7 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 执行 make check 验证。数据库测试使用 STUHELPER_PROFILES_TEST_DSN 指定的独立数据库，覆盖归属、并发重试、公开字段、昵称补填、Unicode 边界、偏好与重复迁移。本模块不保存登录令牌、实名材料、手机号或学校资格。
 
-注销申请需要明确确认积分清零政策，7 天内可撤销，截止时刻起由当前管理员处理。资产核实前保留账号使用能力，资产结清后禁止普通操作并隐藏公开主页。会话、授权和内容步骤完成后关闭业务账号，同一 SSO 身份不能自动重建。
+注销申请需要明确确认积分清零政策，7 天内可撤销，截止时刻起由当前管理员处理。资产核实前保留账号使用能力，资产结清后 Service.Get、修改与建档均返回 ErrClosed 并隐藏公开主页。全部步骤完成后重置展示偏好与群名片许可，清理历史资料及本人注销幂等快照并写入 closed 事件，同一 SSO 身份不能自动重建。
 
 流程持久保存申请、管理员批准、各步骤与失败原因。依赖故障保留进度，同一申请再次处理时从未完成步骤继续。各外部端口必须按申请 ID 幂等，并先核实结果不明的写入。管理列表使用 after 与 limit，每页最多 100 条。
 
@@ -52,6 +52,6 @@ InformationAuthority.AuthorizeInformation 负责拒绝审计。AuditInformation 
 
 OpenAPI 路径与生成 SDK 无变化。这些方法供可信 Go 装配使用，backend 接入需固定提供方提交，注入权限与审计实现，并保持查询入口自身的授权检查。
 
-唯一查询能力为 profiles.information-query。Query 返回 nickname、bio、visibility、group_card_consent，ChangedAt 来自最近一次资料事件。不提供线索解析，不接受敏感字段展开。
+唯一查询能力为 profiles.information-query。Query 在鉴权前校验字段名白名单，返回 nickname、bio、visibility、group_card_consent，处理中或已关闭账号标记 Current=false，ChangedAt 来自最近一次资料事件（无事件时为零值）。不提供线索解析，不接受敏感字段展开。
 
 公开设置与群名片许可是资料查询字段，群名片许可本身不授予管理员信息查询权。账号没有学校归属字段，宿主授权实现必须通过公开事实核验目标在请求学校或群的范围，不能把请求携带的 Scope 当作授权。
