@@ -67,7 +67,7 @@ func (s *Service) now() time.Time {
 	}
 	return time.Now().UTC()
 }
-func validClosureKey(k string) bool { return len(k) > 0 && len(k) <= 128 }
+func validClosureKey(k string) bool { return validIdempotencyKey(k) }
 func (s *Service) AccountAccess(ctx context.Context, p Principal) error {
 	if !p.Valid() {
 		return ErrInput
@@ -106,7 +106,7 @@ func (s *Service) RequestClosure(ctx context.Context, p Principal, key string, a
 	return r.ChangeClosure(ctx, p, key, "request", "", s.now())
 }
 func (s *Service) CancelClosure(ctx context.Context, p Principal, key, id string) (Closure, error) {
-	if !p.Valid() || !validClosureKey(key) || len(id) != 36 {
+	if !p.Valid() || !validClosureKey(key) || !validUUID(id) {
 		return Closure{}, ErrInput
 	}
 	r, e := s.closureRepository()
@@ -128,6 +128,9 @@ func (s *Service) AdminClosure(ctx context.Context, p Principal, id string) (Clo
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return Closure{}, e
 	}
+	if !validUUID(id) {
+		return Closure{}, ErrInput
+	}
 	r, e := s.closureRepository()
 	if e != nil {
 		return Closure{}, e
@@ -139,7 +142,7 @@ func (s *Service) ListClosures(ctx context.Context, p Principal, after string, l
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return nil, e
 	}
-	if limit < 1 || limit > 100 || (after != "" && len(after) != 36) {
+	if limit < 1 || limit > 100 || (after != "" && !validUUID(after)) {
 		return nil, ErrInput
 	}
 	r, e := s.closureRepository()
@@ -155,7 +158,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return Closure{}, e
 	}
-	if !validClosureKey(key) || len(id) != 36 {
+	if !validClosureKey(key) || !validUUID(id) {
 		return Closure{}, ErrInput
 	}
 	r, e := s.closureRepository()
