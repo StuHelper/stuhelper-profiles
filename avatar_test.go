@@ -55,7 +55,8 @@ func (m *fakeAvatarMedia) ReleaseAvatar(_ context.Context, _ p.Principal, profil
 	return nil
 }
 
-func TestAvatarMediaLifecyclePublicInformationAndClosureRelease(t *testing.T) {
+func avatarRepository(t *testing.T) *postgres.Repository {
+	t.Helper()
 	dsn := os.Getenv("STUHELPER_PROFILES_TEST_DSN")
 	if dsn == "" {
 		t.Fatal("isolated database required")
@@ -92,6 +93,12 @@ func TestAvatarMediaLifecyclePublicInformationAndClosureRelease(t *testing.T) {
 		t.Fatal(e)
 	}
 
+	return repo
+}
+
+func TestAvatarMediaLifecyclePublicInformationAndClosureRelease(t *testing.T) {
+	ctx := context.Background()
+	repo := avatarRepository(t)
 	s, _ := p.New(repo)
 	alice := p.Principal{Issuer: "https://issuer.invalid", Subject: "alice"}
 	bob := p.Principal{Issuer: alice.Issuer, Subject: "bob"}
@@ -206,7 +213,177 @@ func TestAvatarMediaLifecyclePublicInformationAndClosureRelease(t *testing.T) {
 		t.Fatal("closed account left active avatar reference")
 	}
 	var storedAvatar sql.NullString
-	if e = owner.QueryRow(`SELECT avatar_version_id FROM profiles.profiles WHERE subject='alice'`).Scan(&storedAvatar); e != nil || storedAvatar.Valid {
+	if e = repo.DB.QueryRow(`SELECT avatar_version_id FROM profiles.profiles WHERE subject='alice'`).Scan(&storedAvatar); e != nil || storedAvatar.Valid {
 		t.Fatal("expected NULL avatar_version_id after closure", storedAvatar, e)
+	}
+}
+
+type lostAvatarUpdate struct{ *postgres.Repository }
+
+func (r lostAvatarUpdate) Update(ctx context.Context, who p.Principal, key string, in p.Update) (p.Profile, error) {
+	return r.UpdateAt(ctx, who, key, in, time.Now())
+}
+func (r lostAvatarUpdate) UpdateAt(ctx context.Context, who p.Principal, key string, in p.Update, now time.Time) (p.Profile, error) {
+	_, err := r.Repository.UpdateAt(ctx, who, key, in, now)
+	if err != nil {
+		return p.Profile{}, err
+	}
+	return p.Profile{}, p.ErrUnavailable // Commit succeeded, but its reply was lost.
+}
+
+func TestAvatarUnknownCommitPreservesActiveReference(t *testing.T) {
+	repo := avatarRepository(t)
+	repo.DB.SetMaxOpenConns(1)
+	s, _ := p.New(lostAvatarUpdate{repo})
+	ctx := context.Background()
+	who := p.Principal{Issuer: "issuer", Subject: "alice"}
+	before, err := s.Ensure(ctx, who, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := "version-a"
+	media := newRaceAvatarMedia(who)
+	s.AvatarMedia = media
+	in := p.Update{Nickname: "Alice", Revision: before.Revision, AvatarVersionID: &version}
+	first, firstErr := s.Update(ctx, who, "lost", in)
+	if firstErr != nil || first.AvatarVersionID != version {
+		t.Fatalf("durable receipt reconciliation: %+v %v", first, firstErr)
+	}
+	got, err := s.Update(ctx, who, "lost", in)
+	if err != nil || got.AvatarVersionID != version || got.Revision != before.Revision+1 || !media.active[before.ID+":"+version] || media.activated[before.ID+":"+version] != 1 {
+		t.Fatalf("unknown commit replay = %+v, %v, active=%v", got, err, media.active)
+	}
+}
+func newRaceAvatarMedia(who p.Principal) *fakeAvatarMedia {
+	return &fakeAvatarMedia{readyByOwner: map[string]p.Principal{"version-a": who, "version-b": who}, activated: map[string]int{}, released: map[string]int{}, active: map[string]bool{}}
+}
+
+type blockedAvatarRelease struct {
+	*fakeAvatarMedia
+	entered, resume chan struct{}
+	once            sync.Once
+}
+
+func (m *blockedAvatarRelease) ReleaseAvatar(ctx context.Context, who p.Principal, profile, version string) error {
+	if version == "version-a" {
+		m.once.Do(func() {
+			close(m.entered)
+			select {
+			case <-m.resume:
+			case <-ctx.Done():
+			}
+		})
+	}
+	return m.fakeAvatarMedia.ReleaseAvatar(ctx, who, profile, version)
+}
+func TestAvatarConcurrentReactivationAndIdenticalRequests(t *testing.T) {
+	repo := avatarRepository(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	who := p.Principal{Issuer: "issuer", Subject: "alice"}
+	media := &blockedAvatarRelease{fakeAvatarMedia: newRaceAvatarMedia(who), entered: make(chan struct{}), resume: make(chan struct{})}
+	first, _ := p.New(repo)
+	second, _ := p.New(&postgres.Repository{DB: repo.DB})
+	first.AvatarMedia, second.AvatarMedia = media, media
+	profile, err := first.Ensure(ctx, who, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := "version-a", "version-b"
+	set := func(s *p.Service, k string, rev int64, v *string) (p.Profile, error) {
+		return s.Update(ctx, who, k, p.Update{Nickname: "Alice", Revision: rev, AvatarVersionID: v})
+	}
+	initial, err := set(first, "first", profile.Revision, &a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped := make(chan error, 1)
+	go func() { _, err := set(first, "replace", initial.Revision, &b); swapped <- err }()
+	select {
+	case <-media.entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	const copies = 4
+	type result struct {
+		profile p.Profile
+		err     error
+	}
+	restored := make(chan result, copies)
+	started := make(chan struct{}, copies)
+	for range copies {
+		go func() {
+			started <- struct{}{}
+			v, e := set(second, "restore", initial.Revision+1, &a)
+			restored <- result{v, e}
+		}()
+	}
+	for range copies {
+		<-started
+	}
+	// Leave the superseded release in flight until all replays have started.
+	select {
+	case <-time.After(120 * time.Millisecond):
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	close(media.resume)
+	if err := <-swapped; err != nil {
+		t.Fatal(err)
+	}
+	for range copies {
+		r := <-restored
+		if r.err != nil || r.profile.AvatarVersionID != a || r.profile.Revision != initial.Revision+2 {
+			t.Fatalf("concurrent restore = %+v", r)
+		}
+	}
+	bound := profile.ID + ":" + a
+	if !media.active[bound] || media.active[profile.ID+":"+b] || media.activated[bound] != 2 {
+		t.Fatalf("restored reference state: active=%v activated=%v", media.active, media.activated)
+	}
+}
+
+type unavailableAvatarUpdate struct {
+	*postgres.Repository
+	failRead bool
+}
+
+func (r *unavailableAvatarUpdate) UpdateAt(context.Context, p.Principal, string, p.Update, time.Time) (p.Profile, error) {
+	r.failRead = true
+	return p.Profile{}, p.ErrUnavailable
+}
+func (r *unavailableAvatarUpdate) ReplayUpdate(ctx context.Context, who p.Principal, key string, in p.Update, now time.Time) (p.Profile, bool, error) {
+	if r.failRead {
+		return p.Profile{}, false, p.ErrUnavailable
+	}
+	return r.Repository.ReplayUpdate(ctx, who, key, in, now)
+}
+func TestAvatarRecoveryIntentSurvivesUnavailableReconciliation(t *testing.T) {
+	ctx := context.Background()
+	repo := avatarRepository(t)
+	blocked := &unavailableAvatarUpdate{Repository: repo}
+	s, _ := p.New(blocked)
+	who := p.Principal{Issuer: "issuer", Subject: "alice"}
+	before, err := s.Ensure(ctx, who, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media := newRaceAvatarMedia(who)
+	s.AvatarMedia = media
+	version := "version-a"
+	if _, err = s.Update(ctx, who, "uncertain", p.Update{Revision: before.Revision, Nickname: "Alice", AvatarVersionID: &version}); !errors.Is(err, p.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	if !media.active[before.ID+":"+version] {
+		t.Fatal("compensated without reconciling the commit")
+	}
+	recovered, _ := p.New(repo)
+	recovered.AvatarMedia = media
+	if err = recovered.FlushAvatarReleases(ctx, who); err != nil {
+		t.Fatal(err)
+	}
+	got, err := recovered.Get(ctx, who)
+	if err != nil || got != before || media.active[before.ID+":"+version] {
+		t.Fatalf("recovery: %+v, %v, active=%v", got, err, media.active)
 	}
 }

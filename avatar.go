@@ -22,7 +22,9 @@ type AvatarRelease struct {
 }
 
 type AvatarRepository interface {
-	ReplayUpdate(ctx context.Context, who Principal, key string, in Update) (Profile, bool, error)
+	WithAvatarOwner(ctx context.Context, who Principal, work func(context.Context) error) error
+	QueueAvatarRelease(ctx context.Context, who Principal, profileID, versionID string) (bool, error)
+	ReplayUpdate(ctx context.Context, who Principal, key string, in Update, now time.Time) (Profile, bool, error)
 	PendingAvatarReleases(ctx context.Context, who Principal) ([]AvatarRelease, error)
 	ClosureAvatarReleases(ctx context.Context, who Principal) ([]AvatarRelease, error)
 	ConfirmAvatarReleased(ctx context.Context, who Principal, versionID string) error
@@ -63,16 +65,26 @@ func (s *Service) updateWithAvatar(ctx context.Context, p Principal, key string,
 	if *in.AvatarVersionID != "" && !ValidAvatarVersionID(*in.AvatarVersionID) {
 		return Profile{}, ErrInput
 	}
-	ar, hasAR := s.repo.(AvatarRepository)
-	if hasAR {
-		replayed, hit, err := ar.ReplayUpdate(ctx, p, key, in)
-		if err != nil {
-			return replayed, err
+	ar, ok := s.repo.(AvatarRepository)
+	if !ok {
+		return Profile{}, ErrUnavailable
+	}
+	var out Profile
+	err := ar.WithAvatarOwner(ctx, p, func(locked context.Context) error {
+		var err error
+		out, err = s.applyAvatarUpdate(locked, ar, p, key, in)
+		return err
+	})
+	return out, err
+}
+
+func (s *Service) applyAvatarUpdate(ctx context.Context, ar AvatarRepository, p Principal, key string, in Update) (Profile, error) {
+	now := s.now()
+	if saved, found, err := ar.ReplayUpdate(ctx, p, key, in, now); err != nil || found {
+		if found && err == nil {
+			_ = s.drainAvatarReleases(ctx, ar, p, false)
 		}
-		if hit {
-			_ = s.FlushAvatarReleases(ctx, p)
-			return replayed, nil
-		}
+		return saved, err
 	}
 	if s.AvatarMedia == nil {
 		return Profile{}, ErrUnavailable
@@ -87,81 +99,87 @@ func (s *Service) updateWithAvatar(ctx context.Context, p Principal, key string,
 	if current.Revision != in.Revision {
 		return current, ErrConflict
 	}
-	activated := false
-	if *in.AvatarVersionID != "" && *in.AvatarVersionID != current.AvatarVersionID {
-		callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		err = s.AvatarMedia.ActivateAvatar(callCtx, p, current.ID, *in.AvatarVersionID)
+	version := *in.AvatarVersionID
+	if version != "" && version != current.AvatarVersionID {
+		// A successful profile transaction consumes the intent. A failed write
+		// or lost acknowledgement leaves any unused reference recoverable.
+		inserted, err := ar.QueueAvatarRelease(ctx, p, current.ID, version)
+		if err != nil {
+			return Profile{}, err
+		}
+		call, cancel := context.WithTimeout(ctx, 3*time.Second)
+		err = s.AvatarMedia.ActivateAvatar(call, p, current.ID, version)
 		cancel()
 		if err != nil {
+			if inserted && avatarError(err) != ErrUnavailable {
+				if cleanupErr := ar.ConfirmAvatarReleased(ctx, p, version); cleanupErr != nil {
+					return Profile{}, cleanupErr
+				}
+			}
 			return Profile{}, avatarError(err)
 		}
-		activated = true
 	}
-	out, err := s.repo.Update(ctx, p, key, in)
+	out, err := s.saveUpdate(ctx, p, key, in)
 	if err != nil {
-		if activated && out.AvatarVersionID != *in.AvatarVersionID {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-			_ = s.AvatarMedia.ReleaseAvatar(cleanupCtx, p, current.ID, *in.AvatarVersionID)
-			cancel()
+		if errors.Is(err, ErrUnavailable) {
+			check, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			if saved, hit, replayErr := ar.ReplayUpdate(check, p, key, in, now); hit && replayErr == nil {
+				return saved, nil
+			}
 		}
 		return out, err
 	}
-	if hasAR {
-		_ = s.FlushAvatarReleases(ctx, p)
-	} else if current.AvatarVersionID != "" && current.AvatarVersionID != out.AvatarVersionID {
-		callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		_ = s.AvatarMedia.ReleaseAvatar(callCtx, p, current.ID, current.AvatarVersionID)
-		cancel()
-	}
+	// Profile and release intents have committed. Transient release failures
+	// remain in the durable queue and can be retried via FlushAvatarReleases.
+	_ = s.drainAvatarReleases(ctx, ar, p, false)
 	return out, nil
 }
 
-// FlushAvatarReleases drains durable superseded avatar references for an owner.
+// FlushAvatarReleases drains superseded references under the same owner lock as activation.
 func (s *Service) FlushAvatarReleases(ctx context.Context, p Principal) error {
 	if !p.Valid() {
 		return ErrInput
 	}
-	ar, ok := s.repo.(AvatarRepository)
-	if !ok {
-		return nil
-	}
-	releases, err := ar.PendingAvatarReleases(ctx, p)
-	if err != nil || len(releases) == 0 {
-		return err
-	}
-	if s.AvatarMedia == nil {
-		return ErrUnavailable
-	}
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	for _, rel := range releases {
-		if err := s.AvatarMedia.ReleaseAvatar(callCtx, p, rel.ProfileID, rel.VersionID); err != nil {
-			return avatarError(err)
-		}
-		if err := ar.ConfirmAvatarReleased(callCtx, p, rel.VersionID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.releaseAvatars(ctx, p, false)
 }
 
-func (s *Service) releaseClosureAvatars(ctx context.Context, owner Principal) error {
+func (s *Service) releaseClosureAvatars(ctx context.Context, p Principal) error {
+	return s.releaseAvatars(ctx, p, true)
+}
+
+func (s *Service) releaseAvatars(ctx context.Context, p Principal, closing bool) error {
 	ar, ok := s.repo.(AvatarRepository)
 	if !ok {
 		return nil
 	}
-	releases, err := ar.ClosureAvatarReleases(ctx, owner)
+	return ar.WithAvatarOwner(ctx, p, func(locked context.Context) error { return s.drainAvatarReleases(locked, ar, p, closing) })
+}
+
+func (s *Service) drainAvatarReleases(ctx context.Context, ar AvatarRepository, p Principal, closing bool) error {
+	var releases []AvatarRelease
+	var err error
+	if closing {
+		releases, err = ar.ClosureAvatarReleases(ctx, p)
+	} else {
+		releases, err = ar.PendingAvatarReleases(ctx, p)
+	}
 	if err != nil || len(releases) == 0 {
 		return err
 	}
 	if s.AvatarMedia == nil {
 		return ErrUnavailable
 	}
-	for _, rel := range releases {
-		if err := s.AvatarMedia.ReleaseAvatar(ctx, owner, rel.ProfileID, rel.VersionID); err != nil {
+	call, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	for i, rel := range releases {
+		if i == 100 {
+			return ErrUnavailable
+		}
+		if err := s.AvatarMedia.ReleaseAvatar(call, p, rel.ProfileID, rel.VersionID); err != nil && !errors.Is(err, ErrNotFound) {
 			return avatarError(err)
 		}
-		if err := ar.ConfirmAvatarReleased(ctx, owner, rel.VersionID); err != nil {
+		if err := ar.ConfirmAvatarReleased(call, p, rel.VersionID); err != nil {
 			return err
 		}
 	}

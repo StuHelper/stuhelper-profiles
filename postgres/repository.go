@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	p "github.com/StuHelper/stuhelper-profiles"
+	"time"
 )
 
 const Schema = `CREATE SCHEMA IF NOT EXISTS profiles;
@@ -21,7 +22,9 @@ CREATE TABLE IF NOT EXISTS profiles.profiles(
  account_state text NOT NULL DEFAULT 'active' CHECK(account_state IN('active','processing','closed')),
  PRIMARY KEY(issuer,subject));
 CREATE TABLE IF NOT EXISTS profiles.requests(issuer text NOT NULL,subject text NOT NULL,key text NOT NULL,digest text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(issuer,subject,key));
-CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());`
+CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS profiles_events_owner_created_idx ON profiles.events(issuer,subject,created_at DESC);
+CREATE INDEX IF NOT EXISTS profiles_events_owner_id_idx ON profiles.events(issuer,subject,id DESC);`
 
 type Repository struct{ DB *sql.DB }
 
@@ -34,7 +37,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+avatarSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+retentionSchema+avatarSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -51,27 +54,35 @@ func (r *Repository) CheckRuntime(ctx context.Context) error {
 
 type scanner interface{ Scan(...any) error }
 
-func scan(row scanner) (p.Profile, error) {
+func scanWithState(row scanner) (p.Profile, string, error) {
 	var v p.Profile
+	var state string
 	var raw, consent []byte
-	e := row.Scan(&v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent, &v.AvatarVersionID)
+	e := row.Scan(&state, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent, &v.AvatarVersionID)
 	if errors.Is(e, sql.ErrNoRows) {
-		return v, p.ErrNotFound
+		return v, "", p.ErrNotFound
 	}
 	if e != nil {
-		return v, p.ErrUnavailable
+		return v, "", p.ErrUnavailable
 	}
 	if json.Unmarshal(raw, &v.Visibility) != nil || json.Unmarshal(consent, &v.GroupCardConsent) != nil {
-		return v, p.ErrUnavailable
+		return v, "", p.ErrUnavailable
 	}
 	v.NicknameRequired = v.Nickname == ""
-	return v, nil
+	return v, state, nil
 }
 
 const columns = "public_id,nickname,revision,bio,visibility,group_card_consent,COALESCE(avatar_version_id,'')"
 
 func (r *Repository) Get(ctx context.Context, who p.Principal) (p.Profile, error) {
-	return scan(r.DB.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
+	v, state, e := scanWithState(r.avatarDB(ctx).QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
+	if e != nil {
+		return v, e
+	}
+	if state != "active" {
+		return p.Profile{}, p.ErrClosed
+	}
+	return v, nil
 }
 func (r *Repository) Public(ctx context.Context, id string) (p.PublicRecord, error) {
 	var out p.PublicRecord
@@ -105,16 +116,12 @@ func (r *Repository) Ensure(ctx context.Context, who p.Principal, name string) (
 			return p.Profile{}, p.ErrUnavailable
 		}
 	}
-	var state string
-	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject).Scan(&state); e != nil {
-		return p.Profile{}, p.ErrUnavailable
+	out, state, e := scanWithState(tx.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
+	if e != nil {
+		return out, e
 	}
 	if state != "active" {
 		return p.Profile{}, p.ErrClosed
-	}
-	out, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject))
-	if e != nil {
-		return out, e
 	}
 	if e = tx.Commit(); e != nil {
 		return p.Profile{}, p.ErrUnavailable
@@ -122,21 +129,24 @@ func (r *Repository) Ensure(ctx context.Context, who p.Principal, name string) (
 	return out, nil
 }
 func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in p.Update) (p.Profile, error) {
-	tx, e := r.DB.BeginTx(ctx, nil)
+	return r.UpdateAt(ctx, who, key, in, time.Now().UTC())
+}
+func (r *Repository) UpdateAt(ctx context.Context, who p.Principal, key string, in p.Update, now time.Time) (p.Profile, error) {
+	now = now.UTC()
+	tx, e := r.avatarDB(ctx).BeginTx(ctx, nil)
 	if e != nil {
 		return p.Profile{}, p.ErrUnavailable
 	}
 	defer tx.Rollback()
-	current, e := scan(tx.QueryRowContext(ctx, `SELECT `+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
+	current, state, e := scanWithState(tx.QueryRowContext(ctx, `SELECT account_state,`+columns+` FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject))
 	if e != nil {
 		return current, e
 	}
-	var state string
-	if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject).Scan(&state); e != nil {
-		return current, p.ErrUnavailable
-	}
 	if state != "active" {
 		return current, p.ErrClosed
+	}
+	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2 AND key=$3 AND created_at<$4`, who.Issuer, who.Subject, key, now.Add(-24*time.Hour)); e != nil {
+		return current, p.ErrUnavailable
 	}
 	b, _ := json.Marshal(in)
 	sum := sha256.Sum256(b)
@@ -192,7 +202,7 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 			return out, p.ErrUnavailable
 		}
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests VALUES($1,$2,$3,$4,$5)`, who.Issuer, who.Subject, key, digest, saved); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests(issuer,subject,key,digest,result,created_at) VALUES($1,$2,$3,$4,$5,$6)`, who.Issuer, who.Subject, key, digest, saved, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.events(issuer,subject,revision,kind) VALUES($1,$2,$3,'updated')`, who.Issuer, who.Subject, out.Revision); e != nil {
