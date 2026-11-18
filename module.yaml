@@ -19,6 +19,8 @@ optional:
     api: 1
   - id: resources
     api: 1
+  - id: favorites
+    api: 1
   - id: open-platform
     api: 1
   - id: qq-binding
@@ -42,6 +44,7 @@ scenario_tests:
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
   PC-07:
+    - capability_test.go#TestClosureOptionalDependenciesDeclaredInManifest
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
     - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
