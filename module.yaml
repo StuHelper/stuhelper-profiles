@@ -42,6 +42,7 @@ scenario_tests:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
     - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
+    - public_batch_test.go#TestPublicBatchAndIDsEliminateNPlusOneAndEnforceVisibility
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons

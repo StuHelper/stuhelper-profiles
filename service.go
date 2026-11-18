@@ -205,7 +205,7 @@ func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) 
 	if e != nil {
 		return PublicProfile{}, e
 	}
-	return s.composePublicProfile(ctx, record.Owner, record.Profile), nil
+	return s.resolvePublicRecords(ctx, []PublicRecord{record})[0], nil
 }
 
 // All six flags are required so an incomplete update cannot silently clear consent.

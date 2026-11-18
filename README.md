@@ -6,7 +6,9 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 学校、认证徽章、学院、署名评价和资料默认公开，年级默认不公开。六项都可关闭。公共接口通过 verification 读取当前学校事实，并再次按偏好过滤字段。事实服务故障时保留基础主页，facts_state 标明不可用。接口不返回关联内容、身份材料、绑定、账户标识或资产数据。
 
-独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。
+PublicBatch 与 PublicByIDs 支持单次最多 100 个去重目标的批量公开资料读取，仅返回有效且已完成昵称填写的公开主页，并支持通过 BatchPublicFacts 批量读取学校与认证徽章事实。
+
+独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。 省略的简介和展示偏好保留原值。
 
 POST /api/v1/profiles/me/preview 接收未保存的昵称、简介与展示偏好草稿，按与公开主页相同的事实过滤规则只读合成预览结果，不写入数据库且无需幂等键。
 
