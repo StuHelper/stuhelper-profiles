@@ -1003,6 +1003,42 @@
               "maximum": 100,
               "default": 50
             }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cooling",
+                "cancelled",
+                "awaiting_assets",
+                "processing",
+                "closed"
+              ]
+            }
+          },
+          {
+            "name": "actionable",
+            "in": "query",
+            "description": "When true, returns only closures ready for approval after the seven-day cooling period or awaiting retry.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "blocker",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assets_unavailable",
+                "assets_pending",
+                "sessions_unavailable",
+                "authorizations_unavailable",
+                "content_unavailable"
+              ]
+            }
           }
         ]
       }
@@ -1364,6 +1400,11 @@
             "items": {
               "$ref": "#/components/schemas/Closure"
             }
+          },
+          "next_cursor": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exclusive cursor for the next page ordered by (created_at ASC, id ASC)."
           }
         }
       },

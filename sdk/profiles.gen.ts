@@ -251,6 +251,11 @@ export interface components {
         };
         ClosurePage: {
             items: components["schemas"]["Closure"][];
+            /**
+             * Format: uuid
+             * @description Exclusive cursor for the next page ordered by (created_at ASC, id ASC).
+             */
+            next_cursor?: string;
         };
         /** @description 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。 */
         GroupCardConsent: {
@@ -970,6 +975,10 @@ export interface operations {
             query?: {
                 after?: string;
                 limit?: number;
+                state?: "cooling" | "cancelled" | "awaiting_assets" | "processing" | "closed";
+                /** @description When true, returns only closures ready for approval after the seven-day cooling period or awaiting retry. */
+                actionable?: boolean;
+                blocker?: "assets_unavailable" | "assets_pending" | "sessions_unavailable" | "authorizations_unavailable" | "content_unavailable";
             };
             header?: never;
             path?: never;
