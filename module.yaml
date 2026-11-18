@@ -35,13 +35,17 @@ capability_requires:
 scenario_tests:
   PC-08:
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   PC-05:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
     - closure_concurrency_idempotency_test.go#TestClosureLeaseDisconnectPersistenceReplayAndAudit
     - closure_concurrency_idempotency_test.go#TestProcessClosureUsesPersistedBlockerOverStaleLocalError
   PC-09:
@@ -50,5 +54,9 @@ scenario_tests:
   PC-12:
     - capability_test.go#TestGroupCardCapabilityRegistration
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
