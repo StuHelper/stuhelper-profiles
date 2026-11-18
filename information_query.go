@@ -83,5 +83,5 @@ func (s *Service) Query(ctx context.Context, p Principal, q Query) ([]Record, er
 			{Name: "group_card_consent", Category: "business", Value: string(consent)},
 		},
 	}}
-	return s.informationFields(ctx, p, q, out)
+	return filterInformationFields(q, out)
 }

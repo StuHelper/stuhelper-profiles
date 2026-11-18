@@ -63,3 +63,4 @@ scenario_tests:
     - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
     - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
+    - service_unit_test.go#TestServiceUnitInputBoundariesPortsAndConcurrencyWithoutDatabase
