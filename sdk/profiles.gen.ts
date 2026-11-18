@@ -141,6 +141,10 @@ export interface components {
         };
         Error: {
             code: string;
+            /** @description Optional request field name associated with a validation failure. */
+            field?: string;
+            /** @description Optional stable validation reason code for localized field messages. */
+            reason?: string;
         };
         ProfileVisibility: {
             /** @default true */
@@ -161,6 +165,7 @@ export interface components {
             nickname: string;
             /** Format: int64 */
             revision: number;
+            /** @description Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected. */
             bio?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
             group_card_consent?: components["schemas"]["GroupCardConsent"];

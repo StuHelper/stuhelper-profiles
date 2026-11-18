@@ -139,7 +139,7 @@ func New(repo Repository) (*Service, error) {
 	return &Service{repo: repo}, nil
 }
 func ValidName(name string) bool {
-	return name == strings.TrimSpace(name) && utf8.ValidString(name) && utf8.RuneCountInString(name) >= 1 && utf8.RuneCountInString(name) <= 20 && !strings.ContainsFunc(name, func(r rune) bool { return unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Co, unicode.Cs) })
+	return ValidateNickname(name) == nil
 }
 
 // InitialNickname validates each source independently and never changes SSO.
@@ -154,7 +154,7 @@ func InitialNickname(displayName, username string) string {
 func (s *Service) Ready(ctx context.Context) error { return s.repo.Ready(ctx) }
 func (s *Service) Get(ctx context.Context, p Principal) (Profile, error) {
 	if !p.Valid() {
-		return Profile{}, ErrInput
+		return Profile{}, inputError("principal", "principal_invalid")
 	}
 	return s.repo.Get(ctx, p)
 }
@@ -162,8 +162,13 @@ func (s *Service) Get(ctx context.Context, p Principal) (Profile, error) {
 // An empty initial name records the explicit completion state without failing login.
 // Ensure never overwrites a profile created during an earlier login.
 func (s *Service) Ensure(ctx context.Context, p Principal, name string) (Profile, error) {
-	if !p.Valid() || (name != "" && !ValidName(name)) {
-		return Profile{}, ErrInput
+	if !p.Valid() {
+		return Profile{}, inputError("principal", "principal_invalid")
+	}
+	if name != "" {
+		if err := ValidateNickname(name); err != nil {
+			return Profile{}, err
+		}
 	}
 	return s.repo.Ensure(ctx, p, name)
 }
@@ -171,13 +176,24 @@ func (s *Service) Save(ctx context.Context, p Principal, key string, revision in
 	return s.Update(ctx, p, key, Update{Nickname: name, Revision: revision})
 }
 func (s *Service) Update(ctx context.Context, p Principal, key string, in Update) (Profile, error) {
-	if !p.Valid() || !validIdempotencyKey(key) || in.Revision < 1 || !ValidName(in.Nickname) {
-		return Profile{}, ErrInput
+	if !p.Valid() {
+		return Profile{}, inputError("principal", "principal_invalid")
 	}
-	if in.Bio != nil && (!utf8.ValidString(*in.Bio) || utf8.RuneCountInString(*in.Bio) > 120 || strings.ContainsFunc(*in.Bio, func(r rune) bool {
-		return (unicode.IsControl(r) && r != '\n') || isBidiControl(r) || unicode.In(r, unicode.Co, unicode.Cs)
-	})) {
-		return Profile{}, ErrInput
+	if !validIdempotencyKey(key) {
+		return Profile{}, inputError("idempotency_key", "idempotency_key_invalid")
+	}
+	if in.Revision < 1 {
+		return Profile{}, inputError("revision", "revision_invalid")
+	}
+	if err := ValidateNickname(in.Nickname); err != nil {
+		return Profile{}, err
+	}
+	if in.Bio != nil {
+		normalized := NormalizeBio(*in.Bio)
+		if err := ValidateBio(normalized); err != nil {
+			return Profile{}, err
+		}
+		in.Bio = &normalized
 	}
 	return s.repo.Update(ctx, p, key, in)
 }
@@ -240,13 +256,13 @@ func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) 
 func (v *Visibility) UnmarshalJSON(b []byte) error {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(b, &fields) != nil || len(fields) != 6 {
-		return ErrInput
+		return inputError("visibility", "visibility_invalid")
 	}
 	values := map[string]*bool{"school": &v.School, "badge": &v.Badge, "department": &v.Department, "grade": &v.Grade, "reviews": &v.Reviews, "resources": &v.Resources}
 	for key, target := range values {
 		raw, ok := fields[key]
 		if !ok || string(raw) == "null" || json.Unmarshal(raw, target) != nil {
-			return ErrInput
+			return inputError("visibility", "visibility_invalid")
 		}
 	}
 	return nil

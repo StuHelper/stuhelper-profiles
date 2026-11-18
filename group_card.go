@@ -28,12 +28,12 @@ type GroupCardConsent struct {
 func (v *GroupCardConsent) UnmarshalJSON(b []byte) error {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(b, &m) != nil || len(m) != 7 {
-		return ErrInput
+		return inputError("group_card_consent", "group_card_consent_invalid")
 	}
 	for k, p := range map[string]*bool{"school": &v.School, "grade": &v.Grade, "department": &v.Department, "name": &v.Name, "student_id": &v.StudentID, "gender": &v.Gender, "nickname": &v.Nickname} {
 		raw, ok := m[k]
 		if !ok || string(raw) == "null" || json.Unmarshal(raw, p) != nil {
-			return ErrInput
+			return inputError("group_card_consent", "group_card_consent_invalid")
 		}
 	}
 	return nil
