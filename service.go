@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -127,6 +128,8 @@ type Service struct {
 	ClosureAuthority ClosureAuthority
 	ClosureEffects   ClosureEffects
 	Facts            PublicFacts
+	closureMu        sync.Mutex
+	closureTurns     map[string]chan struct{}
 }
 
 func New(repo Repository) (*Service, error) {

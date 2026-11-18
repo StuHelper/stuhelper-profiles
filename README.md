@@ -20,7 +20,7 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 资产、授权和内容步骤分别返回跳过的模块，资产仅接受 billing，授权仅接受 open-platform，内容接受 reviews、resources、favorites、qq-binding。模块名与步骤不匹配时拒绝写入。
 
-注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块，失败与重试都保留进度。当前恢复方式为管理员通过原申请 ID 再次处理，每次校验当前管理权限。管理列表展示 blocker 和 completed_steps，依赖恢复后沿原步骤继续，不自动重新执行资产处置。
+注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块。ProcessClosure 通过短租约互斥步骤执行，客户端断连时仍保存已完成步骤进度，幂等重放回查最新状态，恢复重试记录 retry 与实际操作管理员。
 
 业务账号注销通过 qq-binding 公开接口删除三项绑定并关闭后续绑定写入。模块曾安装但暂不可用时等待恢复，只有安装历史明确证明从未安装时才跳过。
 
