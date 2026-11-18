@@ -49,16 +49,6 @@
               }
             }
           },
-          "409": {
-            "description": "Revision or idempotency conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
           "429": {
             "description": "Capacity exceeded",
             "content": {
@@ -209,6 +199,109 @@
         ]
       }
     },
+    "/api/v1/profiles/me/preview": {
+      "post": {
+        "operationId": "previewOwnProfile",
+        "description": "Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePreview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized public profile preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profiles/{id}": {
       "get": {
         "operationId": "getPublicProfile",
@@ -237,22 +330,31 @@
             }
           },
           "404": {
-            "description": "Profile unavailable"
-          },
-          "503": {
-            "description": "Database unavailable"
+            "description": "Profile unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "description": "请求过于频繁，稍后重试",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -269,6 +371,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -299,8 +411,8 @@
               }
             }
           },
-          "409": {
-            "description": "Revision or idempotency conflict",
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -325,19 +437,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "200": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Closure"
                 }
               }
             }
@@ -353,6 +452,16 @@
           }
         ],
         "responses": {
+          "202": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -375,6 +484,16 @@
           },
           "403": {
             "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -412,19 +531,6 @@
                 }
               }
             }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "202": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Closure"
-                }
-              }
-            }
           }
         },
         "description": "Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.",
@@ -437,6 +543,14 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -461,6 +575,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -483,6 +607,16 @@
           },
           "403": {
             "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -517,19 +651,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "200": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Closure"
                 }
               }
             }
@@ -555,6 +676,14 @@
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -568,6 +697,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -598,8 +737,8 @@
               }
             }
           },
-          "409": {
-            "description": "Revision or idempotency conflict",
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -624,19 +763,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "200": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Closure"
                 }
               }
             }
@@ -665,6 +791,16 @@
           }
         ],
         "responses": {
+          "202": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Closure"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -687,6 +823,16 @@
           },
           "403": {
             "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -721,19 +867,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "202": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Closure"
                 }
               }
             }
@@ -759,6 +892,14 @@
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -772,6 +913,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosurePage"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid input",
             "content": {
@@ -802,8 +953,8 @@
               }
             }
           },
-          "409": {
-            "description": "Revision or idempotency conflict",
+          "404": {
+            "description": "No matching closure",
             "content": {
               "application/json": {
                 "schema": {
@@ -828,19 +979,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No matching closure"
-          },
-          "200": {
-            "description": "Current durable progress. Processing is complete only when state is closed. Unknown assets never permit completion.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClosurePage"
                 }
               }
             }
@@ -959,6 +1097,14 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "field": {
+            "type": "string",
+            "description": "Optional request field name associated with a validation failure."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional stable validation reason code for localized field messages."
           }
         }
       },
@@ -1022,13 +1168,33 @@
           },
           "bio": {
             "type": "string",
-            "maxLength": 120
+            "maxLength": 120,
+            "description": "Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected."
           },
           "visibility": {
             "$ref": "#/components/schemas/ProfileVisibility"
           },
           "group_card_consent": {
             "$ref": "#/components/schemas/GroupCardConsent"
+          }
+        }
+      },
+      "ProfilePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Draft nickname; omit to use the saved nickname, or pass empty string while nickname_required is true."
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Draft bio; omit to use the saved bio."
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ProfileVisibility"
           }
         }
       },

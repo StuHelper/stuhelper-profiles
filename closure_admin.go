@@ -58,25 +58,6 @@ type ClosureAdminRepository interface {
 	QueryClosureEvents(ctx context.Context, closureID string, hasCursor bool, cursorAt time.Time, cursorID int64, limit int) (ClosureEventPage, error)
 }
 
-func validClosureUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i := 0; i < 36; i++ {
-		c := s[i]
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return false
-			}
-			continue
-		}
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
 func EncodeClosureEventCursor(createdAt time.Time, id int64) string {
 	raw := fmt.Sprintf("%d:%d", createdAt.UTC().UnixNano(), id)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
@@ -122,7 +103,7 @@ func (s *Service) QueryClosures(ctx context.Context, p Principal, filter Closure
 	if filter.Limit < 1 || filter.Limit > 100 {
 		return ClosurePage{}, ErrInput
 	}
-	if filter.After != "" && !validClosureUUID(filter.After) {
+	if filter.After != "" && !validUUID(filter.After) {
 		return ClosurePage{}, ErrInput
 	}
 	if filter.State != "" && !slices.Contains(validClosureStates, filter.State) {
@@ -149,7 +130,7 @@ func (s *Service) ListClosureEvents(ctx context.Context, p Principal, filter Clo
 	if filter.Limit < 1 || filter.Limit > 100 {
 		return ClosureEventPage{}, ErrInput
 	}
-	if filter.ClosureID != "" && !validClosureUUID(filter.ClosureID) {
+	if filter.ClosureID != "" && !validUUID(filter.ClosureID) {
 		return ClosureEventPage{}, ErrInput
 	}
 	var (

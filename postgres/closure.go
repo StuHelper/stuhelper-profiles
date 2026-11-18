@@ -12,11 +12,14 @@ import (
 
 const closureSchema = `
 CREATE TABLE IF NOT EXISTS profiles.closures(id text PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,state text NOT NULL CHECK(state IN('cooling','cancelled','awaiting_assets','processing','closed')),result jsonb NOT NULL,created_at timestamptz NOT NULL);
+ALTER TABLE profiles.closures ADD COLUMN IF NOT EXISTS processing_until timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(issuer,subject) WHERE state<>'cancelled';
+CREATE INDEX IF NOT EXISTS profiles_closures_owner_created_idx ON profiles.closures(issuer,subject,created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
 CREATE INDEX IF NOT EXISTS profiles_closures_state_created_id_idx ON profiles.closures(state,created_at ASC,id ASC);
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_idx ON profiles.closure_events(closure_id,id);
 CREATE INDEX IF NOT EXISTS profiles_closure_events_created_id_idx ON profiles.closure_events(created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_id_idx ON profiles.closure_events(closure_id,created_at DESC,id DESC);
 `
@@ -62,6 +65,31 @@ func (r *Repository) Closures(ctx context.Context, after string, limit int) ([]p
 	page, e := r.QueryClosures(ctx, p.ClosureFilter{After: after, Limit: limit}, time.Now().UTC())
 	return page.Items, e
 }
+
+// AcquireClosureStep claims a short wall-clock lease on an active closure so concurrent callers serialize step RPCs without holding DB connections.
+func (r *Repository) AcquireClosureStep(ctx context.Context, id string, ttl time.Duration) (p.ClosureRecord, bool, error) {
+	ms := ttl.Milliseconds()
+	if ms < 1 {
+		ms = 1
+	}
+	rec, err := closureScan(r.DB.QueryRowContext(ctx, `UPDATE profiles.closures SET processing_until=clock_timestamp()+($2*interval '1 millisecond') WHERE id=$1 AND state IN('awaiting_assets','processing') AND (processing_until IS NULL OR processing_until<=clock_timestamp()) RETURNING issuer,subject,result`, id, ms))
+	if err == nil {
+		return rec, true, nil
+	}
+	if !errors.Is(err, p.ErrNotFound) {
+		return rec, false, err
+	}
+	rec, err = r.Closure(ctx, id)
+	return rec, false, err
+}
+
+func (r *Repository) ReleaseClosureStep(ctx context.Context, id string) error {
+	if _, err := r.DB.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL WHERE id=$1`, id); err != nil {
+		return p.ErrUnavailable
+	}
+	return nil
+}
+
 func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, action, id string, now time.Time) (p.Closure, error) {
 	var out p.Closure
 	tx, e := r.DB.BeginTx(ctx, nil)
@@ -84,11 +112,22 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 		if json.Unmarshal(raw, &out) != nil {
 			return out, p.ErrUnavailable
 		}
-		if action == "approve" {
-			v, e := closureScan(tx.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id=$1`, id))
-			return v.Closure, e
+		v, e := closureScan(tx.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id=$1`, out.ID))
+		if e != nil {
+			return out, e
 		}
-		return out, nil
+		if action != "approve" {
+			var state string
+			if e = tx.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, v.Owner.Issuer, v.Owner.Subject).Scan(&state); errors.Is(e, sql.ErrNoRows) {
+				return out, p.ErrNotFound
+			} else if e != nil {
+				return out, p.ErrUnavailable
+			}
+			if state != "active" {
+				return out, p.ErrClosed
+			}
+		}
+		return v.Closure, nil
 	}
 	if !errors.Is(e, sql.ErrNoRows) {
 		return out, p.ErrUnavailable
@@ -114,6 +153,8 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	if e != nil {
 		return out, p.ErrUnavailable
 	}
+	eventAction := action
+	updateClosure := true
 	if action == "request" {
 		if state != "active" {
 			return out, p.ErrClosed
@@ -152,9 +193,22 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 			if out.State == "cancelled" || now.Before(out.CoolingEndsAt) {
 				return out, p.ErrConflict
 			}
+			if out.State == "closed" {
+				raw, _ = json.Marshal(out)
+				if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests VALUES($1,$2,$3,$4,$5,$6)`, actor.Issuer, actor.Subject, key, action, id, raw); e != nil {
+					return out, p.ErrUnavailable
+				}
+				if e = tx.Commit(); e != nil {
+					return out, p.ErrUnavailable
+				}
+				return out, nil
+			}
 			if out.State == "cooling" {
 				out.State = "awaiting_assets"
 				out.Revision++
+			} else {
+				eventAction = "retry"
+				updateClosure = false
 			}
 		default:
 			return out, p.ErrInput
@@ -162,8 +216,8 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	}
 	raw, _ = json.Marshal(out)
 	if action == "request" {
-		_, e = tx.ExecContext(ctx, `INSERT INTO profiles.closures VALUES($1,$2,$3,$4,$5,$6)`, out.ID, who.Issuer, who.Subject, out.State, raw, now)
-	} else {
+		_, e = tx.ExecContext(ctx, `INSERT INTO profiles.closures(id,issuer,subject,state,result,created_at) VALUES($1,$2,$3,$4,$5,$6)`, out.ID, who.Issuer, who.Subject, out.State, raw, now)
+	} else if updateClosure {
 		_, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3 WHERE id=$1`, id, out.State, raw)
 	}
 	if e != nil {
@@ -172,7 +226,7 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests VALUES($1,$2,$3,$4,$5,$6)`, actor.Issuer, actor.Subject, key, action, id, raw); e != nil {
 		return out, p.ErrUnavailable
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, out.ID, action, actor.Issuer, actor.Subject, now); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, out.ID, eventAction, actor.Issuer, actor.Subject, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if e = tx.Commit(); e != nil {
@@ -180,7 +234,15 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	}
 	return out, nil
 }
+
 func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, blocker string, skipped []string, now time.Time) (p.Closure, error) {
+	return r.AdvanceClosureBy(ctx, p.Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}, id, step, blocker, skipped, now)
+}
+
+func (r *Repository) AdvanceClosureBy(ctx context.Context, actor p.Principal, id string, step int, blocker string, skipped []string, now time.Time) (p.Closure, error) {
+	if actor.Issuer == "" || actor.Subject == "" {
+		actor = p.Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}
+	}
 	tx, e := r.DB.BeginTx(ctx, nil)
 	if e != nil {
 		return p.Closure{}, p.ErrUnavailable
@@ -188,7 +250,9 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 	defer tx.Rollback()
 	// Same lock order as application mutations: account row, then closure row.
 	var who p.Principal
-	if e = tx.QueryRowContext(ctx, `SELECT issuer,subject FROM profiles.closures WHERE id=$1`, id).Scan(&who.Issuer, &who.Subject); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT issuer,subject FROM profiles.closures WHERE id=$1`, id).Scan(&who.Issuer, &who.Subject); errors.Is(e, sql.ErrNoRows) {
+		return p.Closure{}, p.ErrNotFound
+	} else if e != nil {
 		return p.Closure{}, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `SELECT 1 FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject); e != nil {
@@ -200,6 +264,12 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 	}
 	out := record.Closure
 	if len(out.CompletedSteps) != step || out.State == "closed" {
+		if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL WHERE id=$1`, id); e != nil {
+			return out, p.ErrUnavailable
+		}
+		if e = tx.Commit(); e != nil {
+			return out, p.ErrUnavailable
+		}
 		return out, nil
 	}
 	if out.State != "awaiting_assets" && out.State != "processing" {
@@ -215,13 +285,9 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 			return out, p.ErrInput
 		}
 	}
-	{
-		// A retry may no longer report an earlier skip, for example when a module
-		// dependency cannot read installation history; confirmed skips are kept.
-		for _, name := range skipped {
-			if !slices.Contains(out.SkippedModules, name) {
-				out.SkippedModules = append(out.SkippedModules, name)
-			}
+	for _, name := range skipped {
+		if !slices.Contains(out.SkippedModules, name) {
+			out.SkippedModules = append(out.SkippedModules, name)
 		}
 	}
 	out.Blocker = blocker
@@ -232,16 +298,32 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 		if len(out.CompletedSteps) == 4 {
 			out.State = "closed"
 			out.CompletedAt = &now
-		}
-		if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3,nickname=CASE WHEN $3='closed' THEN '' ELSE nickname END,bio=CASE WHEN $3='closed' THEN '' ELSE bio END WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
-			return out, p.ErrUnavailable
+			visibility, _ := json.Marshal(p.DefaultVisibility())
+			consent, _ := json.Marshal(p.GroupCardConsent{})
+			var rev int64
+			if e = tx.QueryRowContext(ctx, `UPDATE profiles.profiles SET account_state='closed',nickname='',bio='',visibility=$3,group_card_consent=$4,revision=revision+1 WHERE issuer=$1 AND subject=$2 RETURNING revision`, who.Issuer, who.Subject, visibility, consent).Scan(&rev); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2`, who.Issuer, who.Subject); e != nil {
+				return out, p.ErrUnavailable
+			}
+			if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.events(issuer,subject,revision,kind,created_at) VALUES($1,$2,$3,'closed',$4)`, who.Issuer, who.Subject, rev, now); e != nil {
+				return out, p.ErrUnavailable
+			}
+		} else {
+			if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET account_state=$3 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.State); e != nil {
+				return out, p.ErrUnavailable
+			}
 		}
 	}
 	raw, _ := json.Marshal(out)
-	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3 WHERE id=$1`, id, out.State, raw); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,processing_until=NULL WHERE id=$1`, id, out.State, raw); e != nil {
 		return out, p.ErrUnavailable
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,'urn:stuhelper:profiles-service','closure',$3)`, id, steps[step]+":"+blocker, now); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, id, steps[step]+":"+blocker, actor.Issuer, actor.Subject, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if e = tx.Commit(); e != nil {
