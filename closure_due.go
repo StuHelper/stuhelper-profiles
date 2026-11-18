@@ -38,7 +38,7 @@ type AssetsClearanceEffects interface {
 }
 
 type closureReasonsRepository interface {
-	AdvanceClosureWithReasons(ctx context.Context, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (Closure, error)
+	AdvanceClosureByWithReasons(ctx context.Context, actor Principal, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (Closure, error)
 }
 
 func NormalizePendingReasons(reasons []string) ([]string, bool) {
@@ -75,9 +75,11 @@ func (s *Service) DueClosures(ctx context.Context, p Principal, limit int) ([]Cl
 	if limit < 1 || limit > 100 {
 		return nil, ErrInput
 	}
-	r, e := s.closureRepository()
-	if e != nil {
-		return nil, e
+	r, ok := s.repo.(interface {
+		DueClosures(context.Context, time.Time, int) ([]Closure, error)
+	})
+	if !ok {
+		return nil, ErrUnavailable
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
