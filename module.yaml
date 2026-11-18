@@ -42,6 +42,7 @@ scenario_tests:
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
   PC-12:
@@ -49,3 +50,4 @@ scenario_tests:
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping

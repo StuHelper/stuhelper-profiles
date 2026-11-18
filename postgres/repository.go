@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS profiles.profiles(
  account_state text NOT NULL DEFAULT 'active' CHECK(account_state IN('active','processing','closed')),
  PRIMARY KEY(issuer,subject));
 CREATE TABLE IF NOT EXISTS profiles.requests(issuer text NOT NULL,subject text NOT NULL,key text NOT NULL,digest text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(issuer,subject,key));
-CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());`
+CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,revision bigint NOT NULL,kind text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS profiles_events_owner_created_idx ON profiles.events(issuer,subject,created_at DESC);
+CREATE INDEX IF NOT EXISTS profiles_events_owner_id_idx ON profiles.events(issuer,subject,id DESC);`
 
 type Repository struct{ DB *sql.DB }
 
