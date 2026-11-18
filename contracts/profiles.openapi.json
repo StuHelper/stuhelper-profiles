@@ -199,6 +199,109 @@
         ]
       }
     },
+    "/api/v1/profiles/me/preview": {
+      "post": {
+        "operationId": "previewOwnProfile",
+        "description": "Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePreview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized public profile preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden or invalid CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Capacity exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profiles/{id}": {
       "get": {
         "operationId": "getPublicProfile",
@@ -1037,6 +1140,25 @@
           },
           "group_card_consent": {
             "$ref": "#/components/schemas/GroupCardConsent"
+          }
+        }
+      },
+      "ProfilePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Draft nickname; omit to use the saved nickname, or pass empty string while nickname_required is true."
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Draft bio; omit to use the saved bio."
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ProfileVisibility"
           }
         }
       },

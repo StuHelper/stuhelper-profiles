@@ -48,7 +48,6 @@ func TestOpenAPIWriteCSRFAndErrorResponses(t *testing.T) {
 				}
 			}
 			if usesSession && upper != "GET" && upper != "HEAD" && upper != "OPTIONS" {
-				writeOpsChecked++
 				hasCSRF, hasIdem := false, false
 				for _, param := range op.Parameters {
 					if param.In == "header" && param.Required {
@@ -60,11 +59,13 @@ func TestOpenAPIWriteCSRFAndErrorResponses(t *testing.T) {
 						}
 					}
 				}
-				if !hasCSRF || !hasIdem {
-					t.Fatalf("%s %s (%s) missing required header: csrf=%v idempotency=%v", upper, route, op.OperationID, hasCSRF, hasIdem)
+				_, hasConflict := op.Responses["409"]
+				readOnlyPreview := upper == "POST" && route == "/api/v1/profiles/me/preview" && op.OperationID == "previewOwnProfile"
+				if !hasCSRF || hasIdem == readOnlyPreview || hasConflict == readOnlyPreview {
+					t.Fatalf("%s %s: csrf=%v idempotency=%v conflict=%v", upper, route, hasCSRF, hasIdem, hasConflict)
 				}
-				if _, has409 := op.Responses["409"]; !has409 {
-					t.Fatalf("%s %s (%s) missing 409 conflict response", upper, route, op.OperationID)
+				if !readOnlyPreview {
+					writeOpsChecked++
 				}
 			}
 			if upper == "GET" {

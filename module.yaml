@@ -41,9 +41,11 @@ scenario_tests:
   PC-05:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
+    - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons
+    - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
   PC-07:
     - capability_test.go#TestClosureOptionalDependenciesDeclaredInManifest
     - closure_test.go#TestClosurePersistsSkipsForEveryStep

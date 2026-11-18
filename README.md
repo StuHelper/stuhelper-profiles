@@ -8,6 +8,8 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。
 
+POST /api/v1/profiles/me/preview 接收未保存的昵称、简介与展示偏好草稿，按与公开主页相同的事实过滤规则只读合成预览结果，不写入数据库且无需幂等键。
+
 PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问自己的业务表。公开 ID 与注销 ID 严格校验规范小写 UUID，幂等键要求 1–128 个可打印 ASCII 字符，简介拒绝双向文本覆盖控制符。
 
 昵称最多 20 个 Unicode 码点。简介将 CRLF 换行转为 LF 后校验，最多 120 个码点。InputError 可返回字段名与校验失败原因。
