@@ -44,6 +44,8 @@ scenario_tests:
   PC-07:
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
   PC-12:
@@ -52,4 +54,6 @@ scenario_tests:
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety

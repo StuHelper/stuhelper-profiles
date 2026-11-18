@@ -100,6 +100,14 @@ func (s *Service) informationAuthorize(ctx context.Context, p Principal, cap str
 	}
 	return informationError(s.Information.AuthorizeInformation(ctx, p, "profiles."+cap, scope, target))
 }
+func validInformationField(name string) bool {
+	switch name {
+	case "nickname", "bio", "visibility", "group_card_consent":
+		return true
+	}
+	return false
+}
+
 func informationInput(q Query, max int) error {
 	if q.Limit < 1 || q.Limit > max || (q.After != "" && !validUUID(q.After)) || strings.TrimSpace(q.Purpose) == "" || len(q.Purpose) > 500 || !utf8.ValidString(q.Purpose) || strings.ContainsRune(q.Purpose, 0) || len(q.Value) > 2048 || len(q.Fields) > 64 || len(q.Expand) > 3 || len(q.Scope.School) > 128 || len(q.Scope.Group) > 128 {
 		return ErrInput
@@ -109,12 +117,19 @@ func informationInput(q Query, max int) error {
 			return ErrInput
 		}
 	}
+	selected := make(map[string]bool, len(q.Fields))
+	for _, f := range q.Fields {
+		if !validInformationField(f) || selected[f] {
+			return ErrInput
+		}
+		selected[f] = true
+	}
 	return nil
 }
 func (s *Service) informationFields(ctx context.Context, p Principal, q Query, records []Record) ([]Record, error) {
-	selected := map[string]bool{}
+	selected := make(map[string]bool, len(q.Fields))
 	for _, f := range q.Fields {
-		if selected[f] || f == "" {
+		if !validInformationField(f) || selected[f] {
 			return nil, ErrInput
 		}
 		selected[f] = true
