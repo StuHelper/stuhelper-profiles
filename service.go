@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -20,8 +21,45 @@ var (
 
 type Principal struct{ Issuer, Subject string }
 
+func isBidiControl(r rune) bool {
+	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069)
+}
+
+func validUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validIdempotencyKey(k string) bool {
+	if len(k) < 1 || len(k) > 128 {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7E {
+			return false
+		}
+	}
+	return true
+}
+
 func (p Principal) Valid() bool {
-	return p.Issuer != "" && p.Subject != "" && len(p.Issuer) <= 512 && len(p.Subject) <= 256
+	return p.Issuer != "" && p.Subject != "" && len(p.Issuer) <= 512 && len(p.Subject) <= 256 &&
+		utf8.ValidString(p.Issuer) && utf8.ValidString(p.Subject) &&
+		!strings.ContainsFunc(p.Issuer, unicode.IsControl) && !strings.ContainsFunc(p.Subject, unicode.IsControl)
 }
 
 type Visibility struct {
@@ -90,6 +128,8 @@ type Service struct {
 	ClosureAuthority ClosureAuthority
 	ClosureEffects   ClosureEffects
 	Facts            PublicFacts
+	closureMu        sync.Mutex
+	closureTurns     map[string]chan struct{}
 }
 
 func New(repo Repository) (*Service, error) {
@@ -139,7 +179,7 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 	if !p.Valid() {
 		return Profile{}, inputError("principal", "principal_invalid")
 	}
-	if len(key) < 1 || len(key) > 128 {
+	if !validIdempotencyKey(key) {
 		return Profile{}, inputError("idempotency_key", "idempotency_key_invalid")
 	}
 	if in.Revision < 1 {
@@ -158,7 +198,7 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 	return s.repo.Update(ctx, p, key, in)
 }
 func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) {
-	if len(id) != 36 || strings.ContainsAny(id, "/\\ \n") {
+	if !validUUID(id) {
 		return PublicProfile{}, ErrNotFound
 	}
 	record, e := s.repo.Public(ctx, id)
@@ -196,7 +236,7 @@ func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) 
 			fact.Grade = ""
 		}
 		for _, value := range []string{fact.SchoolID, fact.SchoolName, fact.Department, fact.Grade} {
-			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, unicode.IsControl) {
+			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || isBidiControl(r) }) {
 				return out, nil
 			}
 		}

@@ -63,7 +63,7 @@ func ValidateBio(bio string) error {
 		return inputError("bio", "bio_too_long")
 	}
 	if strings.ContainsFunc(bio, func(r rune) bool {
-		return (unicode.IsControl(r) && r != '\n') || unicode.In(r, unicode.Co, unicode.Cs)
+		return (unicode.IsControl(r) && r != '\n') || isBidiControl(r) || unicode.In(r, unicode.Co, unicode.Cs)
 	}) {
 		return inputError("bio", "bio_invalid_char")
 	}
