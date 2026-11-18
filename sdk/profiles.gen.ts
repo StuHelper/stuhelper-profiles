@@ -241,6 +241,8 @@ export interface components {
             profile_id: string;
             /** @description 经持久安装记录确认从未安装并跳过的模块。缺失或未知记录不能跳过。 */
             skipped_modules?: ("billing" | "open-platform" | "reviews" | "resources" | "favorites" | "qq-binding")[];
+            /** @description Sanitized asset settlement blockers when blocker is assets_pending; never includes balances or payment payloads. */
+            pending_reasons?: ("ivory_balance_remaining" | "refund_in_progress" | "payment_pending_reconciliation")[];
         };
         ClosureRequest: {
             /**

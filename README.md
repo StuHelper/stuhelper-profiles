@@ -30,6 +30,8 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块。ProcessClosure 通过短租约互斥步骤执行，客户端断连时仍保存已完成步骤进度，幂等重放回查最新状态，恢复重试记录 retry 与实际操作管理员。
 
+资产未结清返回 assets_pending 时，Closure.pending_reasons 可携带脱敏子原因（Ivory 余额未清、退款处理中、待确认支付），不含具体金额，资产结清后自动清空。ClosureRepository 与 Service 预留 DueClosures 按时间升序扫描冷静期满及待重试注销单。
+
 业务账号注销通过 qq-binding 公开接口删除三项绑定并关闭后续绑定写入。模块曾安装但暂不可用时等待恢复，只有安装历史明确证明从未安装时才跳过。
 
 ## 群名片用途许可

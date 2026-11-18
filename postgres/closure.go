@@ -17,6 +17,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(i
 CREATE INDEX IF NOT EXISTS profiles_closures_owner_created_idx ON profiles.closures(issuer,subject,created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
 CREATE INDEX IF NOT EXISTS profiles_closures_state_created_id_idx ON profiles.closures(state,created_at ASC,id ASC);
+CREATE INDEX IF NOT EXISTS profiles_closures_due_idx ON profiles.closures(created_at ASC,id ASC) WHERE state IN('cooling','awaiting_assets','processing');
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
 CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_idx ON profiles.closure_events(closure_id,id);
@@ -240,6 +241,14 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 }
 
 func (r *Repository) AdvanceClosureBy(ctx context.Context, actor p.Principal, id string, step int, blocker string, skipped []string, now time.Time) (p.Closure, error) {
+	return r.AdvanceClosureByWithReasons(ctx, actor, id, step, blocker, nil, skipped, now)
+}
+
+func (r *Repository) AdvanceClosureWithReasons(ctx context.Context, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
+	return r.AdvanceClosureByWithReasons(ctx, p.Principal{}, id, step, blocker, pendingReasons, skipped, now)
+}
+
+func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Principal, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
 	if actor.Issuer == "" || actor.Subject == "" {
 		actor = p.Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}
 	}
@@ -285,12 +294,21 @@ func (r *Repository) AdvanceClosureBy(ctx context.Context, actor p.Principal, id
 			return out, p.ErrInput
 		}
 	}
+	normalizedReasons, ok := p.NormalizePendingReasons(pendingReasons)
+	if !ok || (len(normalizedReasons) > 0 && (step != 0 || blocker != "assets_pending")) {
+		return out, p.ErrInput
+	}
 	for _, name := range skipped {
 		if !slices.Contains(out.SkippedModules, name) {
 			out.SkippedModules = append(out.SkippedModules, name)
 		}
 	}
 	out.Blocker = blocker
+	if blocker == "assets_pending" {
+		out.PendingReasons = normalizedReasons
+	} else {
+		out.PendingReasons = nil
+	}
 	out.Revision++
 	if blocker == "" {
 		out.CompletedSteps = append(out.CompletedSteps, steps[step])
