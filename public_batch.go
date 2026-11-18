@@ -24,29 +24,6 @@ type PublicBatchRepository interface {
 	PublicByIDs(ctx context.Context, ids []string) ([]PublicRecord, error)
 }
 
-func validBatchPrincipal(p Principal) bool {
-	return p.Valid() && utf8.ValidString(p.Issuer) && utf8.ValidString(p.Subject) && !strings.ContainsRune(p.Issuer, 0) && !strings.ContainsRune(p.Subject, 0)
-}
-
-func validBatchUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i := 0; i < 36; i++ {
-		c := s[i]
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return false
-			}
-			continue
-		}
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
 func needsPublicFacts(v Visibility) bool {
 	return v.School || v.Badge || v.Department || v.Grade
 }
@@ -71,7 +48,7 @@ func filterPublicFacts(vis Visibility, facts []Affiliation) ([]Affiliation, bool
 			fact.Grade = ""
 		}
 		for _, value := range []string{fact.SchoolID, fact.SchoolName, fact.Department, fact.Grade} {
-			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, unicode.IsControl) {
+			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 200 || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || isBidiControl(r) }) {
 				return nil, false
 			}
 		}
@@ -156,7 +133,7 @@ func (s *Service) PublicBatch(ctx context.Context, principals []Principal) (map[
 	seen := make(map[Principal]struct{}, len(principals))
 	unique := make([]Principal, 0, len(principals))
 	for _, p := range principals {
-		if !validBatchPrincipal(p) {
+		if !p.Valid() {
 			return nil, ErrInput
 		}
 		if _, ok := seen[p]; !ok {
@@ -197,7 +174,7 @@ func (s *Service) PublicByIDs(ctx context.Context, ids []string) (map[string]Pub
 			continue
 		}
 		seen[id] = struct{}{}
-		if validBatchUUID(id) {
+		if validUUID(id) {
 			validIDs = append(validIDs, id)
 		}
 	}

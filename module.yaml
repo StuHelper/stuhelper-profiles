@@ -19,6 +19,8 @@ optional:
     api: 1
   - id: resources
     api: 1
+  - id: favorites
+    api: 1
   - id: open-platform
     api: 1
   - id: qq-binding
@@ -35,18 +37,34 @@ capability_requires:
 scenario_tests:
   PC-08:
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   PC-05:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
+    - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
     - public_batch_test.go#TestPublicBatchAndIDsEliminateNPlusOneAndEnforceVisibility
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
+    - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons
+    - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
   PC-07:
+    - capability_test.go#TestClosureOptionalDependenciesDeclaredInManifest
     - closure_test.go#TestClosurePersistsSkipsForEveryStep
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
+    - closure_concurrency_idempotency_test.go#TestClosureLeaseDisconnectPersistenceReplayAndAudit
+    - closure_concurrency_idempotency_test.go#TestProcessClosureUsesPersistedBlockerOverStaleLocalError
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
+    - closure_concurrency_idempotency_test.go#TestClosureLeaseDisconnectPersistenceReplayAndAudit
   PC-12:
     - capability_test.go#TestGroupCardCapabilityRegistration
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
+    - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
+    - indexes_pagination_test.go#TestIndexesChronologicalClosurePaginationAndErrorMapping
+    - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
+    - service_unit_test.go#TestServiceUnitInputBoundariesPortsAndConcurrencyWithoutDatabase

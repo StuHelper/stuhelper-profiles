@@ -249,6 +249,12 @@ type ClosureRequestAcknowledgePointsForfeiture bool
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
+
+	// Field Optional request field name associated with a validation failure.
+	Field *string `json:"field,omitempty"`
+
+	// Reason Optional stable validation reason code for localized field messages.
+	Reason *string `json:"reason,omitempty"`
 }
 
 // GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
@@ -277,8 +283,19 @@ type Profile struct {
 	Visibility       ProfileVisibility `json:"visibility"`
 }
 
+// ProfilePreview defines model for ProfilePreview.
+type ProfilePreview struct {
+	// Bio Draft bio; omit to use the saved bio.
+	Bio *string `json:"bio,omitempty"`
+
+	// Nickname Draft nickname; omit to use the saved nickname, or pass empty string while nickname_required is true.
+	Nickname   *string            `json:"nickname,omitempty"`
+	Visibility *ProfileVisibility `json:"visibility,omitempty"`
+}
+
 // ProfileUpdate defines model for ProfileUpdate.
 type ProfileUpdate struct {
+	// Bio Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected.
 	Bio *string `json:"bio,omitempty"`
 
 	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
@@ -338,6 +355,7 @@ type ListClosuresParams struct {
 // ProcessClosureParams defines parameters for ProcessClosure.
 type ProcessClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
 }
 
 // UpdateOwnProfileParams defines parameters for UpdateOwnProfile.
@@ -349,11 +367,18 @@ type UpdateOwnProfileParams struct {
 // RequestClosureParams defines parameters for RequestClosure.
 type RequestClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
 }
 
 // CancelClosureParams defines parameters for CancelClosure.
 type CancelClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
+}
+
+// PreviewOwnProfileParams defines parameters for PreviewOwnProfile.
+type PreviewOwnProfileParams struct {
+	XCSRFToken string `json:"X-CSRF-Token"`
 }
 
 // UpdateOwnProfileJSONRequestBody defines body for UpdateOwnProfile for application/json ContentType.
@@ -361,6 +386,9 @@ type UpdateOwnProfileJSONRequestBody = ProfileUpdate
 
 // RequestClosureJSONRequestBody defines body for RequestClosure for application/json ContentType.
 type RequestClosureJSONRequestBody = ClosureRequest
+
+// PreviewOwnProfileJSONRequestBody defines body for PreviewOwnProfile for application/json ContentType.
+type PreviewOwnProfileJSONRequestBody = ProfilePreview
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -483,6 +511,18 @@ type ClientInterface interface {
 	//
 	// Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.
 	CancelClosure(ctx context.Context, closureId openapi_types.UUID, params *CancelClosureParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewOwnProfileWithBody performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+	PreviewOwnProfileWithBody(ctx context.Context, params *PreviewOwnProfileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewOwnProfile performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+	PreviewOwnProfile(ctx context.Context, params *PreviewOwnProfileParams, body PreviewOwnProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPublicProfile performs a GET /api/v1/profiles/{id} (the `GetPublicProfile` operationId) request.
 	//
@@ -628,6 +668,38 @@ func (c *Client) RequestClosure(ctx context.Context, params *RequestClosureParam
 // Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.
 func (c *Client) CancelClosure(ctx context.Context, closureId openapi_types.UUID, params *CancelClosureParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCancelClosureRequest(c.Server, closureId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewOwnProfileWithBody performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request,
+// with any type of body and a specified content type.
+//
+// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+func (c *Client) PreviewOwnProfileWithBody(ctx context.Context, params *PreviewOwnProfileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewOwnProfileRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewOwnProfile performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+func (c *Client) PreviewOwnProfile(ctx context.Context, params *PreviewOwnProfileParams, body PreviewOwnProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewOwnProfileRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -794,6 +866,15 @@ func NewProcessClosureRequest(server string, closureId openapi_types.UUID, param
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
 
 	}
 
@@ -964,6 +1045,15 @@ func NewRequestClosureRequestWithBody(server string, params *RequestClosureParam
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
+
 	}
 
 	return req, nil
@@ -1010,6 +1100,68 @@ func NewCancelClosureRequest(server string, closureId openapi_types.UUID, params
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewPreviewOwnProfileRequest calls the generic PreviewOwnProfile builder with application/json body
+func NewPreviewOwnProfileRequest(server string, params *PreviewOwnProfileParams, body PreviewOwnProfileJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPreviewOwnProfileRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewPreviewOwnProfileRequestWithBody constructs an http.Request for the PreviewOwnProfile method, with any body, and a specified content type
+func NewPreviewOwnProfileRequestWithBody(server string, params *PreviewOwnProfileParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/profiles/me/preview")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam0)
 
 	}
 
@@ -1158,6 +1310,20 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	CancelClosureWithResponse(ctx context.Context, closureId openapi_types.UUID, params *CancelClosureParams, reqEditors ...RequestEditorFn) (*CancelClosureResponse, error)
 
+	// PreviewOwnProfileWithBodyWithResponse performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	PreviewOwnProfileWithBodyWithResponse(ctx context.Context, params *PreviewOwnProfileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewOwnProfileResponse, error)
+
+	// PreviewOwnProfileWithResponse performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+	PreviewOwnProfileWithResponse(ctx context.Context, params *PreviewOwnProfileParams, body PreviewOwnProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewOwnProfileResponse, error)
+
 	// GetPublicProfileWithResponse performs a GET /api/v1/profiles/{id} (the `GetPublicProfile` operationId) request.
 	//
 	// Guest-readable basic profile and current academic facts selected by the owner. Includes no real name, identity document, contact, account identifier or contribution content. Related content requires its own authorized endpoints; unfinished nickname profiles are not published.
@@ -1177,8 +1343,8 @@ type ListClosuresResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1205,9 +1371,9 @@ func (r ListClosuresResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r ListClosuresResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListClosuresResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1260,8 +1426,8 @@ type GetClosureForAdministrationResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1288,9 +1454,9 @@ func (r GetClosureForAdministrationResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetClosureForAdministrationResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetClosureForAdministrationResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1343,6 +1509,8 @@ type ProcessClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1369,6 +1537,11 @@ func (r ProcessClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r ProcessClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ProcessClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1426,8 +1599,6 @@ type GetOwnProfileResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1452,11 +1623,6 @@ func (r GetOwnProfileResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r GetOwnProfileResponse) GetJSON403() *Error {
 	return r.JSON403
-}
-
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetOwnProfileResponse) GetJSON409() *Error {
-	return r.JSON409
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1598,8 +1764,8 @@ type GetOwnClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1626,9 +1792,9 @@ func (r GetOwnClosureResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetOwnClosureResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetOwnClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1681,6 +1847,8 @@ type RequestClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1707,6 +1875,11 @@ func (r RequestClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r RequestClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RequestClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1764,6 +1937,8 @@ type CancelClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1790,6 +1965,11 @@ func (r CancelClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r CancelClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CancelClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1836,15 +2016,100 @@ func (r CancelClosureResponse) ContentType() string {
 	return ""
 }
 
+type PreviewOwnProfileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PublicProfile
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON200() *PublicProfile {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON429() *Error {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r PreviewOwnProfileResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r PreviewOwnProfileResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PreviewOwnProfileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PreviewOwnProfileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PreviewOwnProfileResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetPublicProfileResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *PublicProfile
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *struct {
-		Code *string `json:"code,omitempty"`
-	}
+	JSON429 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -1852,11 +2117,19 @@ func (r GetPublicProfileResponse) GetJSON200() *PublicProfile {
 	return r.JSON200
 }
 
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPublicProfileResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r GetPublicProfileResponse) GetJSON429() *struct {
-	Code *string `json:"code,omitempty"`
-} {
+func (r GetPublicProfileResponse) GetJSON429() *Error {
 	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetPublicProfileResponse) GetJSON503() *Error {
+	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -2012,6 +2285,32 @@ func (c *ClientWithResponses) CancelClosureWithResponse(ctx context.Context, clo
 	return ParseCancelClosureResponse(rsp)
 }
 
+// PreviewOwnProfileWithBodyWithResponse performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request,
+// with any type of body and a specified content type.
+//
+// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) PreviewOwnProfileWithBodyWithResponse(ctx context.Context, params *PreviewOwnProfileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewOwnProfileResponse, error) {
+	rsp, err := c.PreviewOwnProfileWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewOwnProfileResponse(rsp)
+}
+
+// PreviewOwnProfileWithResponse performs a POST /api/v1/profiles/me/preview (the `PreviewOwnProfile` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Synthesizes the caller's PublicProfile from unsaved draft fields and current academic facts without persisting changes.
+func (c *ClientWithResponses) PreviewOwnProfileWithResponse(ctx context.Context, params *PreviewOwnProfileParams, body PreviewOwnProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewOwnProfileResponse, error) {
+	rsp, err := c.PreviewOwnProfile(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewOwnProfileResponse(rsp)
+}
+
 // GetPublicProfileWithResponse performs a GET /api/v1/profiles/{id} (the `GetPublicProfile` operationId) request.
 //
 // Guest-readable basic profile and current academic facts selected by the owner. Includes no real name, identity document, contact, account identifier or contribution content. Related content requires its own authorized endpoints; unfinished nickname profiles are not published.
@@ -2067,15 +2366,12 @@ func ParseListClosuresResponse(rsp *http.Response) (*ListClosuresResponse, error
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2138,15 +2434,12 @@ func ParseGetClosureForAdministrationResponse(rsp *http.Response) (*GetClosureFo
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2209,8 +2502,12 @@ func ParseProcessClosureResponse(rsp *http.Response) (*ProcessClosureResponse, e
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2279,13 +2576,6 @@ func ParseGetOwnProfileResponse(rsp *http.Response) (*GetOwnProfileResponse, err
 			return nil, err
 		}
 		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2419,15 +2709,12 @@ func ParseGetOwnClosureResponse(rsp *http.Response) (*GetOwnClosureResponse, err
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2490,8 +2777,12 @@ func ParseRequestClosureResponse(rsp *http.Response) (*RequestClosureResponse, e
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2561,8 +2852,12 @@ func ParseCancelClosureResponse(rsp *http.Response) (*CancelClosureResponse, err
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2570,6 +2865,74 @@ func ParseCancelClosureResponse(rsp *http.Response) (*CancelClosureResponse, err
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePreviewOwnProfileResponse parses an HTTP response from a PreviewOwnProfileWithResponse call
+func ParsePreviewOwnProfileResponse(rsp *http.Response) (*PreviewOwnProfileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PreviewOwnProfileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PublicProfile
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2611,20 +2974,26 @@ func ParseGetPublicProfileResponse(rsp *http.Response) (*GetPublicProfileRespons
 		}
 		response.JSON200 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest struct {
-			Code *string `json:"code,omitempty"`
-		}
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON429 = &dest
 
-	case rsp.StatusCode == 503:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
