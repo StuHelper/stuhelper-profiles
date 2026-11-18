@@ -1,6 +1,8 @@
 # StuHelper Profiles
 
-profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，按 issuer 与 subject 保留归属。昵称最多 20 个 Unicode 码点，简介最多 120 个。账号注销编排已实现，头像引用尚未实现。
+profiles 拥有公开昵称、头像引用、简介、公开主页 ID 和六项展示偏好，按 issuer 与 subject 保留归属。昵称最多 20 个 Unicode 码点，简介最多 120 个。头像通过 AvatarMedia 端口校验本人已就绪的 profile_avatar 版本并管理引用生命周期，替换、清除及账号注销自动释放引用。
+
+头像激活、替换与释放按账号串行执行。激活前持久记录候选引用，资料更新和消费该记录在同一事务提交。提交回执丢失时先核对幂等结果，待释放的引用可通过 FlushAvatarReleases 重试。
 
 首次登录依次尝试合规的 SSO 显示名、用户名。两者都不合规时保存待填写昵称状态，登录成功，基础主页暂不公开。本人完成昵称后可以读取公开主页，后续 SSO 登录不覆盖用户修改。
 
@@ -8,7 +10,7 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 PublicBatch 与 PublicByIDs 支持单次最多 100 个去重目标的批量公开资料读取，仅返回有效且已完成昵称填写的公开主页，并支持通过 BatchPublicFacts 批量读取学校与认证徽章事实。
 
-独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。 省略的简介和展示偏好保留原值。
+独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。省略的简介和展示偏好保留原值。
 
 POST /api/v1/profiles/me/preview 接收未保存的昵称、简介与展示偏好草稿，按与公开主页相同的事实过滤规则只读合成预览结果，不写入数据库且无需幂等键。
 
@@ -30,7 +32,7 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 注销结果通过 skipped_modules 保存经持久安装历史核实后跳过的模块。ProcessClosure 通过短租约互斥步骤执行，客户端断连时仍保存已完成步骤进度，幂等重放回查最新状态，恢复重试记录 retry 与实际操作管理员。
 
-资产未结清返回 assets_pending 时，Closure.pending_reasons 可携带脱敏子原因（Ivory 余额未清、退款处理中、待确认支付），不含具体金额，资产结清后自动清空。ClosureRepository 与 Service 预留 DueClosures 按时间升序扫描冷静期满及待重试注销单。
+资产未结清返回 assets_pending 时，Closure.pending_reasons 可携带脱敏子原因（Ivory 余额未清、退款处理中、待确认支付），不含具体金额，资产结清后自动清空。PostgreSQL 仓储与 Service 提供 DueClosures 按时间升序扫描冷静期满及待重试注销单。
 
 CleanupExpired 按 1–1000 的批量上限与 3 秒超时清理满 24 小时的幂等响应，以及满 12 个自然月的已关闭或已撤销注销记录与关联事件，未完成注销单与已关闭账号标记继续保留。
 
@@ -64,6 +66,6 @@ InformationAuthority.AuthorizeInformation 负责拒绝审计。AuditInformation 
 
 OpenAPI 路径与生成 SDK 无变化。这些方法供可信 Go 装配使用，backend 接入需固定提供方提交，注入权限与审计实现，并保持查询入口自身的授权检查。
 
-唯一查询能力为 profiles.information-query。Query 在鉴权前校验字段名白名单，返回 nickname、bio、visibility、group_card_consent，处理中或已关闭账号标记 Current=false，ChangedAt 来自最近一次资料事件（无事件时为零值）。不提供线索解析，不接受敏感字段展开。
+唯一查询能力为 profiles.information-query。Query 在鉴权前校验字段名白名单，返回 nickname、avatar_version_id、bio、visibility、group_card_consent，处理中或已关闭账号标记 Current=false，ChangedAt 来自最近一次资料事件（无事件时为零值）。不提供线索解析，不接受敏感字段展开。
 
 公开设置与群名片许可是资料查询字段，群名片许可本身不授予管理员信息查询权。账号没有学校归属字段，宿主授权实现必须通过公开事实核验目标在请求学校或群的范围，不能把请求携带的 Scope 当作授权。

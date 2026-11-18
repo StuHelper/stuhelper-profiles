@@ -68,12 +68,13 @@ func basePublicProfile(v Profile) PublicProfile {
 		state = "hidden"
 	}
 	return PublicProfile{
-		ID:           v.ID,
-		Nickname:     v.Nickname,
-		Bio:          v.Bio,
-		Visibility:   v.Visibility,
-		Affiliations: []Affiliation{},
-		FactsState:   state,
+		ID:              v.ID,
+		Nickname:        v.Nickname,
+		AvatarVersionID: v.AvatarVersionID,
+		Bio:             v.Bio,
+		Visibility:      v.Visibility,
+		Affiliations:    []Affiliation{},
+		FactsState:      state,
 	}
 }
 

@@ -86,7 +86,7 @@ func (s *Service) informationAuthorize(ctx context.Context, p Principal, cap str
 }
 func validInformationField(name string) bool {
 	switch name {
-	case "nickname", "bio", "visibility", "group_card_consent":
+	case "nickname", "avatar_version_id", "bio", "visibility", "group_card_consent":
 		return true
 	}
 	return false

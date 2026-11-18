@@ -16,7 +16,7 @@ func scanPublicRows(rows interface {
 		var rec p.PublicRecord
 		var raw, consent []byte
 		v := &rec.Profile
-		if e := rows.Scan(&rec.Owner.Issuer, &rec.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent); e != nil {
+		if e := rows.Scan(&rec.Owner.Issuer, &rec.Owner.Subject, &v.ID, &v.Nickname, &v.Revision, &v.Bio, &raw, &consent, &v.AvatarVersionID); e != nil {
 			return nil, p.ErrUnavailable
 		}
 		if json.Unmarshal(raw, &v.Visibility) != nil || json.Unmarshal(consent, &v.GroupCardConsent) != nil {

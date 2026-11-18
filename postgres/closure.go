@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_id_idx ON profiles.cl
 
 func (r *Repository) AccountState(ctx context.Context, who p.Principal) (string, error) {
 	var state string
-	e := r.DB.QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject).Scan(&state)
+	e := r.avatarDB(ctx).QueryRowContext(ctx, `SELECT account_state FROM profiles.profiles WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject).Scan(&state)
 	if errors.Is(e, sql.ErrNoRows) {
 		return "", p.ErrNotFound
 	}
@@ -322,7 +322,7 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 			visibility, _ := json.Marshal(p.DefaultVisibility())
 			consent, _ := json.Marshal(p.GroupCardConsent{})
 			var rev int64
-			if e = tx.QueryRowContext(ctx, `UPDATE profiles.profiles SET account_state='closed',nickname='',bio='',visibility=$3,group_card_consent=$4,revision=revision+1 WHERE issuer=$1 AND subject=$2 RETURNING revision`, who.Issuer, who.Subject, visibility, consent).Scan(&rev); e != nil {
+			if e = tx.QueryRowContext(ctx, `UPDATE profiles.profiles SET account_state='closed',nickname='',bio='',avatar_version_id=NULL,visibility=$3,group_card_consent=$4,revision=revision+1 WHERE issuer=$1 AND subject=$2 RETURNING revision`, who.Issuer, who.Subject, visibility, consent).Scan(&rev); e != nil {
 				return out, p.ErrUnavailable
 			}
 			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject); e != nil {

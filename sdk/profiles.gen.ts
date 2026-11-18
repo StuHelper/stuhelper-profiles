@@ -153,6 +153,8 @@ export interface components {
             id: string;
             nickname_required: boolean;
             bio: string;
+            /** @description Active media version identifier for profile_avatar usage; omitted when unset. */
+            avatar_version_id?: string;
             visibility: components["schemas"]["ProfileVisibility"];
             group_card_consent: components["schemas"]["GroupCardConsent"];
         };
@@ -184,6 +186,8 @@ export interface components {
             revision: number;
             /** @description Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected. */
             bio?: string;
+            /** @description Ready owner-uploaded profile_avatar version identifier; pass empty string to clear, omit to keep current avatar. */
+            avatar_version_id?: string;
             visibility?: components["schemas"]["ProfileVisibility"];
             group_card_consent?: components["schemas"]["GroupCardConsent"];
         };
@@ -200,6 +204,8 @@ export interface components {
             /** @description Unicode code points; empty only while nickname_required is true. */
             nickname: string;
             bio: string;
+            /** @description Active media version identifier for profile_avatar usage; omitted when unset. */
+            avatar_version_id?: string;
             visibility: components["schemas"]["ProfileVisibility"];
             affiliations: components["schemas"]["PublicAffiliation"][];
             /**

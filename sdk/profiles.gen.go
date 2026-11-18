@@ -354,7 +354,9 @@ type GroupCardConsent struct {
 
 // Profile defines model for Profile.
 type Profile struct {
-	Bio string `json:"bio"`
+	// AvatarVersionId Active media version identifier for profile_avatar usage; omitted when unset.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+	Bio             string  `json:"bio"`
 
 	// GroupCardConsent 群名片用途逐字段许可，默认全部拒绝；所有字段必须提供。
 	GroupCardConsent GroupCardConsent   `json:"group_card_consent"`
@@ -379,6 +381,9 @@ type ProfilePreview struct {
 
 // ProfileUpdate defines model for ProfileUpdate.
 type ProfileUpdate struct {
+	// AvatarVersionId Ready owner-uploaded profile_avatar version identifier; pass empty string to clear, omit to keep current avatar.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+
 	// Bio Up to 120 Unicode code points; CRLF line endings are normalized to LF before validation, and other control, private-use, or surrogate characters are rejected.
 	Bio *string `json:"bio,omitempty"`
 
@@ -416,7 +421,10 @@ type PublicAffiliationBadge string
 // PublicProfile defines model for PublicProfile.
 type PublicProfile struct {
 	Affiliations []PublicAffiliation `json:"affiliations"`
-	Bio          string              `json:"bio"`
+
+	// AvatarVersionId Active media version identifier for profile_avatar usage; omitted when unset.
+	AvatarVersionId *string `json:"avatar_version_id,omitempty"`
+	Bio             string  `json:"bio"`
 
 	// FactsState Current academic facts; unavailable never prevents reading the basic profile.
 	FactsState PublicProfileFactsState `json:"facts_state"`

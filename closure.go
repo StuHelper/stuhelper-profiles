@@ -305,6 +305,9 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 				} else {
 					err = s.ClosureEffects.AnonymizeContent(call, record.Owner, id)
 				}
+				if err == nil {
+					err = s.releaseClosureAvatars(call, record.Owner)
+				}
 			}
 			cancel()
 		}

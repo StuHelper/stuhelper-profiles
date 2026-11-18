@@ -36,6 +36,9 @@ capability_requires:
       api: 1
 scenario_tests:
   PC-08:
+    - avatar_test.go#TestAvatarUnknownCommitPreservesActiveReference
+    - avatar_test.go#TestAvatarRecoveryIntentSurvivesUnavailableReconciliation
+    - avatar_test.go#TestAvatarConcurrentReactivationAndIdenticalRequests
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
     - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
@@ -44,6 +47,7 @@ scenario_tests:
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
     - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
     - public_batch_test.go#TestPublicBatchAndIDsEliminateNPlusOneAndEnforceVisibility
+    - avatar_test.go#TestAvatarMediaLifecyclePublicInformationAndClosureRelease
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons
@@ -59,6 +63,7 @@ scenario_tests:
     - closure_admin_test.go#TestClosureAdminFilteringChronologicalCursorAndAuditEvents
     - closure_due_test.go#TestClosureAssetsPendingReasonsAndDueClosuresScan
     - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
+    - avatar_test.go#TestAvatarMediaLifecyclePublicInformationAndClosureRelease
   PC-09:
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
     - closure_concurrency_idempotency_test.go#TestClosureLeaseDisconnectPersistenceReplayAndAudit
