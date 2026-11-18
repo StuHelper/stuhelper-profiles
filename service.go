@@ -195,6 +195,9 @@ func (s *Service) Update(ctx context.Context, p Principal, key string, in Update
 		}
 		in.Bio = &normalized
 	}
+	if r, ok := s.repo.(updateAtRepository); ok {
+		return r.UpdateAt(ctx, p, key, in, s.now())
+	}
 	return s.repo.Update(ctx, p, key, in)
 }
 func (s *Service) Public(ctx context.Context, id string) (PublicProfile, error) {

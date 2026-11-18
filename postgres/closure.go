@@ -103,6 +103,9 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,734125))`, string(lockKey)); e != nil {
 		return out, p.ErrUnavailable
 	}
+	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2 AND key=$3 AND created_at<$4`, actor.Issuer, actor.Subject, key, now.Add(-24*time.Hour)); e != nil {
+		return out, p.ErrUnavailable
+	}
 	var savedAction, target string
 	var raw []byte
 	e = tx.QueryRowContext(ctx, `SELECT action,target,result FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2 AND key=$3`, actor.Issuer, actor.Subject, key).Scan(&savedAction, &target, &raw)
@@ -196,7 +199,7 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 			}
 			if out.State == "closed" {
 				raw, _ = json.Marshal(out)
-				if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests VALUES($1,$2,$3,$4,$5,$6)`, actor.Issuer, actor.Subject, key, action, id, raw); e != nil {
+				if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests(actor_issuer,actor_subject,key,action,target,result,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, actor.Issuer, actor.Subject, key, action, id, raw, now); e != nil {
 					return out, p.ErrUnavailable
 				}
 				if e = tx.Commit(); e != nil {
@@ -217,14 +220,14 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	}
 	raw, _ = json.Marshal(out)
 	if action == "request" {
-		_, e = tx.ExecContext(ctx, `INSERT INTO profiles.closures(id,issuer,subject,state,result,created_at) VALUES($1,$2,$3,$4,$5,$6)`, out.ID, who.Issuer, who.Subject, out.State, raw, now)
+		_, e = tx.ExecContext(ctx, `INSERT INTO profiles.closures(id,issuer,subject,state,result,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$6)`, out.ID, who.Issuer, who.Subject, out.State, raw, now)
 	} else if updateClosure {
-		_, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3 WHERE id=$1`, id, out.State, raw)
+		_, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,updated_at=$4 WHERE id=$1`, id, out.State, raw, now)
 	}
 	if e != nil {
 		return out, p.ErrUnavailable
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests VALUES($1,$2,$3,$4,$5,$6)`, actor.Issuer, actor.Subject, key, action, id, raw); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_requests(actor_issuer,actor_subject,key,action,target,result,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, actor.Issuer, actor.Subject, key, action, id, raw, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, out.ID, eventAction, actor.Issuer, actor.Subject, now); e != nil {
@@ -338,7 +341,7 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 		}
 	}
 	raw, _ := json.Marshal(out)
-	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,processing_until=NULL WHERE id=$1`, id, out.State, raw); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,updated_at=$4,processing_until=NULL WHERE id=$1`, id, out.State, raw, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, id, steps[step]+":"+blocker, actor.Issuer, actor.Subject, now); e != nil {

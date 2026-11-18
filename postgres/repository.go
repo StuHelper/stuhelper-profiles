@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	p "github.com/StuHelper/stuhelper-profiles"
+	"time"
 )
 
 const Schema = `CREATE SCHEMA IF NOT EXISTS profiles;
@@ -36,7 +37,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+retentionSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -128,6 +129,10 @@ func (r *Repository) Ensure(ctx context.Context, who p.Principal, name string) (
 	return out, nil
 }
 func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in p.Update) (p.Profile, error) {
+	return r.UpdateAt(ctx, who, key, in, time.Now().UTC())
+}
+func (r *Repository) UpdateAt(ctx context.Context, who p.Principal, key string, in p.Update, now time.Time) (p.Profile, error) {
+	now = now.UTC()
 	tx, e := r.DB.BeginTx(ctx, nil)
 	if e != nil {
 		return p.Profile{}, p.ErrUnavailable
@@ -139,6 +144,9 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	}
 	if state != "active" {
 		return current, p.ErrClosed
+	}
+	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2 AND key=$3 AND created_at<$4`, who.Issuer, who.Subject, key, now.Add(-24*time.Hour)); e != nil {
+		return current, p.ErrUnavailable
 	}
 	b, _ := json.Marshal(in)
 	sum := sha256.Sum256(b)
@@ -181,7 +189,7 @@ func (r *Repository) Update(ctx context.Context, who p.Principal, key string, in
 	if _, e = tx.ExecContext(ctx, `UPDATE profiles.profiles SET nickname=$3,revision=$4,bio=$5,visibility=$6,group_card_consent=$7 WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject, out.Nickname, out.Revision, out.Bio, visibility, consent); e != nil {
 		return out, p.ErrUnavailable
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests VALUES($1,$2,$3,$4,$5)`, who.Issuer, who.Subject, key, digest, saved); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.requests(issuer,subject,key,digest,result,created_at) VALUES($1,$2,$3,$4,$5,$6)`, who.Issuer, who.Subject, key, digest, saved, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.events(issuer,subject,revision,kind) VALUES($1,$2,$3,'updated')`, who.Issuer, who.Subject, out.Revision); e != nil {

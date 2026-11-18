@@ -32,6 +32,8 @@ PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问�
 
 资产未结清返回 assets_pending 时，Closure.pending_reasons 可携带脱敏子原因（Ivory 余额未清、退款处理中、待确认支付），不含具体金额，资产结清后自动清空。ClosureRepository 与 Service 预留 DueClosures 按时间升序扫描冷静期满及待重试注销单。
 
+CleanupExpired 按 1–1000 的批量上限与 3 秒超时清理满 24 小时的幂等响应，以及满 12 个自然月的已关闭或已撤销注销记录与关联事件，未完成注销单与已关闭账号标记继续保留。
+
 业务账号注销通过 qq-binding 公开接口删除三项绑定并关闭后续绑定写入。模块曾安装但暂不可用时等待恢复，只有安装历史明确证明从未安装时才跳过。
 
 ## 群名片用途许可
