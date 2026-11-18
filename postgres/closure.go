@@ -13,8 +13,11 @@ import (
 const closureSchema = `
 CREATE TABLE IF NOT EXISTS profiles.closures(id text PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,state text NOT NULL CHECK(state IN('cooling','cancelled','awaiting_assets','processing','closed')),result jsonb NOT NULL,created_at timestamptz NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(issuer,subject) WHERE state<>'cancelled';
+CREATE INDEX IF NOT EXISTS profiles_closures_owner_created_idx ON profiles.closures(issuer,subject,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_idx ON profiles.closure_events(closure_id,id);
 `
 
 func (r *Repository) AccountState(ctx context.Context, who p.Principal) (string, error) {
@@ -48,7 +51,23 @@ func (r *Repository) CurrentClosure(ctx context.Context, who p.Principal) (p.Clo
 	return v.Closure, e
 }
 func (r *Repository) Closures(ctx context.Context, after string, limit int) ([]p.Closure, error) {
-	rows, e := r.DB.QueryContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id>$1 ORDER BY id LIMIT $2`, after, limit)
+	var (
+		rows *sql.Rows
+		e    error
+	)
+	if after == "" {
+		rows, e = r.DB.QueryContext(ctx, `SELECT issuer,subject,result FROM profiles.closures ORDER BY created_at ASC,id ASC LIMIT $1`, limit)
+	} else {
+		var cursorAt time.Time
+		e = r.DB.QueryRowContext(ctx, `SELECT created_at FROM profiles.closures WHERE id=$1`, after).Scan(&cursorAt)
+		if errors.Is(e, sql.ErrNoRows) {
+			return nil, p.ErrInput
+		}
+		if e != nil {
+			return nil, p.ErrUnavailable
+		}
+		rows, e = r.DB.QueryContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE (created_at,id)>($1,$2) ORDER BY created_at ASC,id ASC LIMIT $3`, cursorAt, after, limit)
+	}
 	if e != nil {
 		return nil, p.ErrUnavailable
 	}
@@ -61,7 +80,10 @@ func (r *Repository) Closures(ctx context.Context, after string, limit int) ([]p
 		}
 		out = append(out, v.Closure)
 	}
-	return out, rows.Err()
+	if rows.Err() != nil {
+		return nil, p.ErrUnavailable
+	}
+	return out, nil
 }
 func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, action, id string, now time.Time) (p.Closure, error) {
 	var out p.Closure
@@ -189,7 +211,9 @@ func (r *Repository) AdvanceClosure(ctx context.Context, id string, step int, bl
 	defer tx.Rollback()
 	// Same lock order as application mutations: account row, then closure row.
 	var who p.Principal
-	if e = tx.QueryRowContext(ctx, `SELECT issuer,subject FROM profiles.closures WHERE id=$1`, id).Scan(&who.Issuer, &who.Subject); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT issuer,subject FROM profiles.closures WHERE id=$1`, id).Scan(&who.Issuer, &who.Subject); errors.Is(e, sql.ErrNoRows) {
+		return p.Closure{}, p.ErrNotFound
+	} else if e != nil {
 		return p.Closure{}, p.ErrUnavailable
 	}
 	if _, e = tx.ExecContext(ctx, `SELECT 1 FROM profiles.profiles WHERE issuer=$1 AND subject=$2 FOR UPDATE`, who.Issuer, who.Subject); e != nil {

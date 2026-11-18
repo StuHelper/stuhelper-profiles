@@ -135,11 +135,30 @@ func (s *Service) AdminClosure(ctx context.Context, p Principal, id string) (Clo
 	v, e := r.Closure(ctx, id)
 	return v.Closure, e
 }
+func validCursorUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) ListClosures(ctx context.Context, p Principal, after string, limit int) ([]Closure, error) {
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return nil, e
 	}
-	if limit < 1 || limit > 100 || (after != "" && len(after) != 36) {
+	if limit < 1 || limit > 100 || (after != "" && !validCursorUUID(after)) {
 		return nil, ErrInput
 	}
 	r, e := s.closureRepository()

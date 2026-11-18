@@ -106,7 +106,7 @@ func validInformationField(name string) bool {
 }
 
 func informationInput(q Query, max int) error {
-	if q.Limit < 1 || q.Limit > max || len(q.After) > 256 || strings.TrimSpace(q.Purpose) == "" || len(q.Purpose) > 500 || len(q.Value) > 2048 || len(q.Fields) > 64 || len(q.Expand) > 3 || len(q.Scope.School) > 128 || len(q.Scope.Group) > 128 {
+	if q.Limit < 1 || q.Limit > max || (q.After != "" && !validCursorUUID(q.After)) || strings.TrimSpace(q.Purpose) == "" || len(q.Purpose) > 500 || len(q.Value) > 2048 || len(q.Fields) > 64 || len(q.Expand) > 3 || len(q.Scope.School) > 128 || len(q.Scope.Group) > 128 {
 		return ErrInput
 	}
 	selected := make(map[string]bool, len(q.Fields))
