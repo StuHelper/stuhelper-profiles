@@ -8,7 +8,7 @@ profiles 拥有公开昵称、简介、公开主页 ID 和六项展示偏好，�
 
 独立契约由 contracts/profiles.openapi.json 定义，执行 make generate 更新 Go 与 TypeScript SDK。GET /api/v1/profiles/me 读取本人资料，PUT 与注销 POST 接口均要求幂等键与 X-CSRF-Token。GET /api/v1/profiles/{id} 对游客开放，冲突返回当前资料。
 
-PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问自己的业务表。公开 ID 稳定唯一，昵称限制为 20 个 Unicode 码点，简介限制为 120 个码点。
+PostgreSQL 的 profiles schema 使用独立迁移身份，运行身份只访问自己的业务表。公开 ID 与注销 ID 严格校验规范小写 UUID，幂等键要求 1–128 个可打印 ASCII 字符，简介拒绝双向文本覆盖控制符。
 
 执行 make check 验证。数据库测试使用 STUHELPER_PROFILES_TEST_DSN 指定的独立数据库，覆盖归属、并发重试、公开字段、昵称补填、Unicode 边界、偏好与重复迁移。本模块不保存登录令牌、实名材料、手机号或学校资格。
 
@@ -32,7 +32,7 @@ GET /api/v1/profiles/me 的 Profile 新增 group_card_consent，PUT 的 ProfileU
 
 Service.GroupCardFields(ctx, principal, owner, school, purpose) 返回 map[string]CardField。purpose 仅接受 group_card。每项含 Allowed、Available、Value，拒绝或缺失时 Value 为空。
 
-nickname 来自本模块；其余字段由 GroupCards 端口读取获准来源。
+nickname 来自本模块；其余字段按固定顺序经 GroupCards 端口读取获准来源，并拒绝空值、超长或含控制符与双向覆盖符的事实。
 
 backend 注入 GroupCardProvider：AuthorizeGroupCard 每次验证当前服务身份及学校内 profiles.group-card.read；GroupCardValues 将许可字段转交 verification.GroupCardValues，并转换 Available/Value。不得从请求载荷授予服务能力，撤权后调用立即拒绝。
 
