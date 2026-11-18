@@ -338,6 +338,7 @@ type ListClosuresParams struct {
 // ProcessClosureParams defines parameters for ProcessClosure.
 type ProcessClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
 }
 
 // UpdateOwnProfileParams defines parameters for UpdateOwnProfile.
@@ -349,11 +350,13 @@ type UpdateOwnProfileParams struct {
 // RequestClosureParams defines parameters for RequestClosure.
 type RequestClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
 }
 
 // CancelClosureParams defines parameters for CancelClosure.
 type CancelClosureParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+	XCSRFToken     string `json:"X-CSRF-Token"`
 }
 
 // UpdateOwnProfileJSONRequestBody defines body for UpdateOwnProfile for application/json ContentType.
@@ -795,6 +798,15 @@ func NewProcessClosureRequest(server string, closureId openapi_types.UUID, param
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
+
 	}
 
 	return req, nil
@@ -964,6 +976,15 @@ func NewRequestClosureRequestWithBody(server string, params *RequestClosureParam
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
+
 	}
 
 	return req, nil
@@ -1010,6 +1031,15 @@ func NewCancelClosureRequest(server string, closureId openapi_types.UUID, params
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-CSRF-Token", params.XCSRFToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-CSRF-Token", headerParam1)
 
 	}
 
@@ -1177,8 +1207,8 @@ type ListClosuresResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1205,9 +1235,9 @@ func (r ListClosuresResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r ListClosuresResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListClosuresResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1260,8 +1290,8 @@ type GetClosureForAdministrationResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1288,9 +1318,9 @@ func (r GetClosureForAdministrationResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetClosureForAdministrationResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetClosureForAdministrationResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1343,6 +1373,8 @@ type ProcessClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1369,6 +1401,11 @@ func (r ProcessClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r ProcessClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ProcessClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1426,8 +1463,6 @@ type GetOwnProfileResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1452,11 +1487,6 @@ func (r GetOwnProfileResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r GetOwnProfileResponse) GetJSON403() *Error {
 	return r.JSON403
-}
-
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetOwnProfileResponse) GetJSON409() *Error {
-	return r.JSON409
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1598,8 +1628,8 @@ type GetOwnClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -1626,9 +1656,9 @@ func (r GetOwnClosureResponse) GetJSON403() *Error {
 	return r.JSON403
 }
 
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r GetOwnClosureResponse) GetJSON409() *Error {
-	return r.JSON409
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetOwnClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1681,6 +1711,8 @@ type RequestClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1707,6 +1739,11 @@ func (r RequestClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r RequestClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RequestClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1764,6 +1801,8 @@ type CancelClosureResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1790,6 +1829,11 @@ func (r CancelClosureResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r CancelClosureResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CancelClosureResponse) GetJSON404() *Error {
+	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
@@ -1841,10 +1885,12 @@ type GetPublicProfileResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *PublicProfile
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
 	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *struct {
-		Code *string `json:"code,omitempty"`
-	}
+	JSON429 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -1852,11 +1898,19 @@ func (r GetPublicProfileResponse) GetJSON200() *PublicProfile {
 	return r.JSON200
 }
 
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPublicProfileResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r GetPublicProfileResponse) GetJSON429() *struct {
-	Code *string `json:"code,omitempty"`
-} {
+func (r GetPublicProfileResponse) GetJSON429() *Error {
 	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetPublicProfileResponse) GetJSON503() *Error {
+	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -2067,15 +2121,12 @@ func ParseListClosuresResponse(rsp *http.Response) (*ListClosuresResponse, error
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2138,15 +2189,12 @@ func ParseGetClosureForAdministrationResponse(rsp *http.Response) (*GetClosureFo
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2209,8 +2257,12 @@ func ParseProcessClosureResponse(rsp *http.Response) (*ProcessClosureResponse, e
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2279,13 +2331,6 @@ func ParseGetOwnProfileResponse(rsp *http.Response) (*GetOwnProfileResponse, err
 			return nil, err
 		}
 		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2419,15 +2464,12 @@ func ParseGetOwnClosureResponse(rsp *http.Response) (*GetOwnClosureResponse, err
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON409 = &dest
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest Error
@@ -2490,8 +2532,12 @@ func ParseRequestClosureResponse(rsp *http.Response) (*RequestClosureResponse, e
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2561,8 +2607,12 @@ func ParseCancelClosureResponse(rsp *http.Response) (*CancelClosureResponse, err
 		}
 		response.JSON403 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Error
@@ -2611,20 +2661,26 @@ func ParseGetPublicProfileResponse(rsp *http.Response) (*GetPublicProfileRespons
 		}
 		response.JSON200 = &dest
 
-	case rsp.StatusCode == 404:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest struct {
-			Code *string `json:"code,omitempty"`
-		}
+		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON429 = &dest
 
-	case rsp.StatusCode == 503:
-		break // No content-type
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
