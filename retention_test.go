@@ -68,6 +68,31 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	t.Run("Ops runtime role", func(t *testing.T) {
+		if _, err := owner.Exec(`REVOKE UPDATE,DELETE ON profiles.requests,profiles.events,profiles.closure_requests,profiles.closure_events FROM ` + role); err != nil {
+			t.Fatal(err)
+		}
+		person := p.Principal{Issuer: issuer, Subject: "restricted_user"}
+		profile, err := s.Ensure(ctx, person, "Restricted")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Save(ctx, person, "restricted-profile", profile.Revision, "NewName"); err != nil {
+			t.Errorf("save with Ops runtime privileges: %v", err)
+		}
+		closure, err := s.RequestClosure(ctx, person, "restricted-closure", true)
+		if err != nil {
+			t.Errorf("request closure with Ops runtime privileges: %v", err)
+		} else if _, err := s.CancelClosure(ctx, person, "cancel-restricted", closure.ID); err != nil {
+			t.Errorf("cancel closure with Ops runtime privileges: %v", err)
+		}
+		if _, err := s.CleanupExpired(ctx, now, 1); err != nil {
+			t.Errorf("retention with Ops runtime privileges: %v", err)
+		}
+	})
+	if t.Failed() {
+		return
+	}
 
 	// Input bounds validation.
 	for _, badLimit := range []int{0, -1, 1001} {
