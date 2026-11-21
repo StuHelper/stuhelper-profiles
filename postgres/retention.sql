@@ -9,7 +9,40 @@ UPDATE profiles.closures c SET updated_at=CASE WHEN c.state='cancelled' THEN
  ELSE COALESCE((c.result->>'completed_at')::timestamptz,c.created_at) END WHERE c.updated_at IS NULL;
 ALTER TABLE profiles.closures ALTER COLUMN updated_at SET NOT NULL;
 ALTER TABLE profiles.closures ALTER COLUMN updated_at SET DEFAULT now();
-CREATE INDEX IF NOT EXISTS profiles_closures_retention_idx ON profiles.closures(updated_at,id) WHERE state IN('closed','cancelled');
+
+-- Seed existing terminal rows once. New terminal transitions use the database
+-- clock, independent of the timestamps the application stores in updated_at.
+ALTER TABLE profiles.closures ADD COLUMN IF NOT EXISTS retention_terminal_at timestamptz;
+UPDATE profiles.closures SET retention_terminal_at=CASE WHEN isfinite(updated_at)
+ THEN LEAST(updated_at,statement_timestamp()) ELSE statement_timestamp() END
+ WHERE state IN('closed','cancelled') AND retention_terminal_at IS NULL;
+DROP INDEX IF EXISTS profiles.profiles_closures_retention_idx;
+CREATE INDEX IF NOT EXISTS profiles_closures_terminal_retention_idx
+ ON profiles.closures(retention_terminal_at,id) WHERE state IN('closed','cancelled');
+
+CREATE OR REPLACE FUNCTION profiles.guard_closure_row() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+BEGIN
+ IF TG_OP='UPDATE' THEN
+  IF (NEW.id,NEW.issuer,NEW.subject,NEW.created_at) IS DISTINCT FROM (OLD.id,OLD.issuer,OLD.subject,OLD.created_at) THEN
+   RAISE EXCEPTION 'immutable_closure_identity' USING ERRCODE='42501';
+  END IF;
+  IF NEW.retention_terminal_at IS DISTINCT FROM OLD.retention_terminal_at OR
+     (OLD.retention_terminal_at IS NOT NULL AND NEW.state IS DISTINCT FROM OLD.state) THEN
+   RAISE EXCEPTION 'immutable_closure_retention' USING ERRCODE='42501';
+  END IF;
+ ELSIF NEW.retention_terminal_at IS NOT NULL THEN
+  RAISE EXCEPTION 'database_owned_closure_retention' USING ERRCODE='42501';
+ END IF;
+ IF NEW.state IN('closed','cancelled') AND NEW.retention_terminal_at IS NULL THEN
+  NEW.retention_terminal_at := statement_timestamp();
+ END IF;
+ RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION profiles.guard_closure_row() FROM PUBLIC;
+CREATE OR REPLACE TRIGGER profiles_closures_guard_row BEFORE INSERT OR UPDATE ON profiles.closures
+ FOR EACH ROW EXECUTE FUNCTION profiles.guard_closure_row();
 
 -- The application may use an earlier processing time, but setting it in
 -- the future must never advance expiry beyond the database clock.
@@ -70,13 +103,17 @@ BEGIN
  GET DIAGNOSTICS closure_requests_deleted = ROW_COUNT;
 
  SELECT ARRAY(
-  SELECT id FROM profiles.closures WHERE state IN('closed','cancelled') AND updated_at<effective_time-interval '12 months'
-  ORDER BY updated_at,id LIMIT batch_limit FOR UPDATE SKIP LOCKED
+  SELECT id FROM profiles.closures WHERE state IN('closed','cancelled') AND retention_terminal_at<effective_time-interval '12 months'
+  ORDER BY retention_terminal_at,id LIMIT batch_limit FOR UPDATE SKIP LOCKED
  ) INTO expired_ids;
 
- DELETE FROM profiles.closure_events WHERE closure_id=ANY(expired_ids);
+ DELETE FROM profiles.closure_events WHERE id IN (
+  SELECT id FROM profiles.closure_events WHERE closure_id=ANY(expired_ids)
+  ORDER BY closure_id,id LIMIT batch_limit
+ );
  GET DIAGNOSTICS closure_events_deleted = ROW_COUNT;
- DELETE FROM profiles.closures WHERE id=ANY(expired_ids);
+ DELETE FROM profiles.closures c WHERE c.id=ANY(expired_ids)
+  AND NOT EXISTS (SELECT 1 FROM profiles.closure_events e WHERE e.closure_id=c.id);
  GET DIAGNOSTICS closures_deleted = ROW_COUNT;
  RETURN NEXT;
 END;

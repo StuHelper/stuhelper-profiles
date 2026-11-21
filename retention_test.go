@@ -176,7 +176,20 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if _, e = repo.Closure(ctx, cClosed.ID); e != nil {
 		t.Fatalf("closed request was deleted ahead of its remaining audit events: %v", e)
 	}
-	restarted, e := p.New(&postgres.Repository{DB: runtime})
+	checkEvents := func(id string, want int) {
+		t.Helper()
+		var got int
+		if err := runtime.QueryRow("SELECT count(*) FROM profiles.closure_events WHERE closure_id=$1", id).Scan(&got); err != nil || got != want {
+			t.Fatalf("closure %s has %d audit events, want %d: %v", id, got, want, err)
+		}
+	}
+	checkEvents(cClosed.ID, 5)
+	restartDB, e := sql.Open("pgx", dsn+" dbname="+name+" user="+role)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { restartDB.Close() })
+	restarted, e := p.New(&postgres.Repository{DB: restartDB})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -184,10 +197,13 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if e != nil || r2.RequestsDeleted != 1 || r2.ClosuresDeleted != 0 || r2.ClosureEventsDeleted != 1 {
 		t.Fatalf("unexpected batch 2 cleanup result: %+v, err=%v", r2, e)
 	}
+	checkEvents(cClosed.ID, 4)
 	drained, e := restarted.CleanupExpired(ctx, cleanupTime, 100)
 	if e != nil || drained.RequestsDeleted != 0 || drained.ClosuresDeleted != 2 || drained.ClosureEventsDeleted != 6 {
 		t.Fatalf("unexpected drain result: %+v, err=%v", drained, e)
 	}
+	checkEvents(cClosed.ID, 0)
+	checkEvents(cBoundary.ID, 2)
 	again, e := restarted.CleanupExpired(ctx, cleanupTime, 100)
 	if e != nil || again != (p.CleanupResult{}) {
 		t.Fatalf("expected idempotent zero cleanup after drain: %+v, err=%v", again, e)
