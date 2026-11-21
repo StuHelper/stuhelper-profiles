@@ -1,7 +1,7 @@
 ---
 type: index
 status: Accepted
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # StuHelper Profiles
@@ -27,6 +27,10 @@ profiles 按 issuer 与 subject 保存本人昵称、头像引用、简介、公
 头像使用本人已就绪的 `profile_avatar` 媒体版本，传空字符串可清除头像。激活、替换和释放按账号串行。激活前保存清理意图，资料提交时同步确认已使用的引用。保存结果未知时先核对幂等回执，未释放的引用可通过 `FlushAvatarReleases` 重试。
 
 游客使用 `GET /api/v1/profiles/{id}` 读取已完成昵称的可见主页。学校、认证徽章、学院、署名评价和资料默认公开，年级默认关闭。接口按当前偏好过滤学校事实。事实源故障时仍可读取基础主页，`facts_state` 为 `unavailable`。
+
+游客使用 `GET /api/v1/profiles/{id}/avatar` 读取当前公开头像。宿主通过 `PublicAvatar` 查找可见主页已选中的头像，再由 media 核验并读取对应版本。
+
+宿主可用 `FlushPendingAvatarReleases` 分页恢复待释放引用。个别账号释放失败仍推进分页，扫描到末尾后从头重试。进程重启时从队首读取持久队列。
 
 `PublicBatch` 和 `PublicByIDs` 是宿主批量读取端口，每次最多 100 个去重目标。仓储只返回可见账号的公开资料。事实端口若实现 `BatchPublicFacts`，可批量读取学校、认证徽章、学院和年级。
 
@@ -60,7 +64,11 @@ profiles 按 issuer 与 subject 保存本人昵称、头像引用、简介、公
 
 管理列表按创建时间和 ID 升序分页，`after` 为规范小写 UUID，单页最多 100 条。`QueryClosures` 支持按 `state`、`actionable`、`blocker` 筛选并返回 `next_cursor`。`ListClosureEvents` 按最新时间返回审计事件。
 
-`DueClosures` 按时间扫描冷静期已满与待重试的注销。`CleanupExpired` 按 3 秒与每批最多 1000 条的上限清理超过 24 小时的幂等回执，以及超过 12 个自然月的已关闭或已撤销注销记录及关联事件。未完成申请与关闭标记继续保留。
+`DueClosures` 为管理员列出到期及待重试的注销。宿主的 `ProcessDueClosures` 每次最多按顺序处理 100 个到期或中断的申请，复用原申请与已保存步骤。资产或依赖阻断留在管理队列，由有权管理员续办。
+
+`CleanupExpired` 在 3 秒内处理每类至多 1000 条回执或终态申请。幂等回执保留 24 小时，已关闭或已撤销的申请及其事件保留 12 个自然月。未完成申请与关闭标记继续保留。
+
+迁移建立受限清理函数，宿主运行身份通过显式授权执行。过期清理以数据库当前时刻为上限，立即清理本人回执须完成注销。普通运行身份不能直接删除上述回执或注销审计。
 
 ## 验证
 
@@ -73,7 +81,7 @@ bash scripts/check-with-postgres.sh
 
 修改 OpenAPI 后用 `make generate` 更新 Go 和 TypeScript SDK。CI 核对生成一致性，并用隔离数据库测试归属、并发、修订冲突、许可撤回、注销恢复与重复迁移。
 
-`module.yaml` 的 `scenario_tests` 使用 `文件#函数` 登记测试。PC-05、PC-08、PC-10 覆盖公开主页、资料修改及昵称补填，PC-07、PC-09 覆盖注销完成及撤销，PC-12 覆盖群名片许可，IQ-02 覆盖账号查询范围。
+`module.yaml` 的 `scenario_tests` 使用 `文件#函数` 登记测试。PC-05、PC-08、PC-10 覆盖公开主页、资料修改及昵称补填。PC-07、PC-09、PC-13 覆盖注销、撤销、到期推进和重启恢复。PC-12 覆盖群名片许可，IQ-02 覆盖账号查询范围。
 
 ## 生产验收与待核对
 
