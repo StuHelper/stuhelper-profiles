@@ -379,6 +379,11 @@ func (r *Repository) advanceClosure(ctx context.Context, actor p.Principal, id, 
 		if _, e = tx.ExecContext(ctx, `SELECT profiles.erase_closed_account_requests($1,$2)`, who.Issuer, who.Subject); e != nil {
 			return out, p.ErrUnavailable
 		}
+		if r.captureClosureCompletions {
+			if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_completions(closure_id,issuer,subject,completed_at) VALUES($1,$2,$3,$4)`, id, who.Issuer, who.Subject, now); e != nil {
+				return out, p.ErrUnavailable
+			}
+		}
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, id, steps[step]+":"+blocker, actor.Issuer, actor.Subject, now); e != nil {
 		return out, p.ErrUnavailable
