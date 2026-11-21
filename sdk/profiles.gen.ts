@@ -54,6 +54,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars. */
+        get: operations["getPublicProfileAvatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/me/closure": {
         parameters: {
             query?: never;
@@ -246,7 +263,7 @@ export interface components {
              */
             profile_id: string;
             /** @description 经持久安装记录确认从未安装并跳过的模块。缺失或未知记录不能跳过。 */
-            skipped_modules?: ("billing" | "open-platform" | "reviews" | "resources" | "favorites" | "qq-binding")[];
+            skipped_modules?: ("billing" | "open-platform" | "storage" | "storage-contribution" | "reviews" | "resources" | "favorites" | "qq-binding" | "verification")[];
             /** @description Sanitized asset settlement blockers when blocker is assets_pending; never includes balances or payment payloads. */
             pending_reasons?: ("ivory_balance_remaining" | "refund_in_progress" | "payment_pending_reconciliation")[];
         };
@@ -552,6 +569,58 @@ export interface operations {
                 };
             };
             /** @description Database unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getPublicProfileAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current approved avatar image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Profile or current avatar unavailable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Profiles or media temporarily unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -49,7 +49,7 @@ func TestClosureAssetsPendingReasonsAndDueClosuresScan(t *testing.T) {
 		t.Fatal(e)
 	}
 	role := name + "_runtime"
-	if _, e = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;`); e != nil {
+	if _, e = owner.Exec(runtimeRoleSQL(role)); e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { owner.Close(); db.Exec(`DROP DATABASE ` + name + ` WITH(FORCE)`); db.Exec(`DROP ROLE ` + role) })
@@ -160,5 +160,158 @@ func TestClosureAssetsPendingReasonsAndDueClosuresScan(t *testing.T) {
 	dueAfterClose, e := s.DueClosures(ctx, admin, 10)
 	if e != nil || len(dueAfterClose) != 1 || dueAfterClose[0].ID != cBob.ID {
 		t.Fatalf("expected only cBob due after Alice closed, got %+v, err=%v", dueAfterClose, e)
+	}
+}
+
+type interruptedDueEffects struct {
+	*detailedClosureEffects
+	cancel          context.CancelFunc
+	sessionAttempts int
+}
+
+func (f *interruptedDueEffects) RevokeSessions(ctx context.Context, who p.Principal, id string) error {
+	f.sessionAttempts++
+	if err := f.closureEffects.RevokeSessions(ctx, who, id); err != nil {
+		return err
+	}
+	if f.cancel != nil {
+		f.cancel()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func TestProcessDueClosuresAtDeadlineResumesAfterRestartAndLeavesBlockedCasesForAdmin(t *testing.T) {
+	ctx := context.Background()
+	repo := avatarRepository(t)
+	s, err := p.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetEffects := &detailedClosureEffects{
+		closureEffects: closureEffects{seen: map[string]bool{}, effects: map[string]int{}},
+		assetErr:       &p.AssetsPendingError{Reasons: []string{p.PendingReasonRefundInProgress}},
+	}
+	fx := &interruptedDueEffects{detailedClosureEffects: assetEffects}
+	s.ClosureEffects = fx
+	now := time.Now().UTC().Add(-10 * 24 * time.Hour).Truncate(time.Millisecond)
+	s.Now = func() time.Time { return now }
+	issuer := "https://issuer.invalid"
+	oldest := p.Principal{Issuer: issuer, Subject: "blocked"}
+	recovering := p.Principal{Issuer: issuer, Subject: "recovering"}
+	for _, person := range []p.Principal{oldest, recovering} {
+		if _, err := s.Ensure(ctx, person, "Account"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	blocked, err := s.RequestClosure(ctx, oldest, "blocked-request", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	recovery, err := s.RequestClosure(ctx, recovering, "recovery-request", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now = blocked.CoolingEndsAt.Add(-time.Nanosecond)
+	if early, err := s.ProcessDueClosures(ctx, 1); err != nil || len(early) != 0 {
+		t.Fatalf("processed before deadline: %+v, %v", early, err)
+	}
+	now = blocked.CoolingEndsAt
+	items, err := s.ProcessDueClosures(ctx, 1)
+	if err != nil || len(items) != 1 || items[0].ID != blocked.ID || items[0].Blocker != "assets_pending" {
+		t.Fatalf("expected one blocked application after its deadline: %+v, %v", items, err)
+	}
+	blockedRev := items[0].Revision
+
+	assetEffects.assetErr = nil
+	now = recovery.CoolingEndsAt
+	inFlight, cancel := context.WithCancel(ctx)
+	defer cancel()
+	fx.cancel = cancel
+	if _, err := s.ProcessDueClosures(inFlight, 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("worker interruption was not reported: %v", err)
+	}
+	progress, err := s.OwnClosure(ctx, recovering)
+	if err != nil || progress.State != "processing" || progress.Blocker != "" || !slices.Equal(progress.CompletedSteps, []string{"assets"}) {
+		t.Fatalf("durable progress was lost or blocked on shutdown: %+v, %v", progress, err)
+	}
+
+	fx.cancel = nil
+	restarted, err := p.New(&postgres.Repository{DB: repo.DB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted.ClosureEffects = fx
+	restarted.Now = s.Now
+	items, err = restarted.ProcessDueClosures(ctx, 1)
+	if err != nil || len(items) != 1 || items[0].ID != recovery.ID || items[0].State != "closed" {
+		t.Fatalf("restart did not finish the unblocked request: %+v, %v", items, err)
+	}
+	if again, err := restarted.ProcessDueClosures(ctx, 1); err != nil || len(again) != 0 {
+		t.Fatalf("completed or manually blocked work ran again: %+v, %v", again, err)
+	}
+	if fx.sessionAttempts != 2 {
+		t.Fatalf("session effect was not retried after an unknown result: %d", fx.sessionAttempts)
+	}
+	for _, step := range []string{"assets", "sessions", "authorizations", "content"} {
+		if fx.effects[step] != 1 {
+			t.Fatalf("durable effect for %s occurred %d times", step, fx.effects[step])
+		}
+	}
+	if err = restarted.AccountAccess(ctx, recovering); !errors.Is(err, p.ErrClosed) {
+		t.Fatalf("closed account still accessible: %v", err)
+	}
+	progress, err = restarted.OwnClosure(ctx, oldest)
+	if err != nil || progress.Blocker != "assets_pending" || progress.Revision != blockedRev {
+		t.Fatalf("automated retries changed a blocked request: %+v, %v", progress, err)
+	}
+	restarted.ClosureAuthority = closureAuthority{}
+	admin := p.Principal{Issuer: issuer, Subject: "admin"}
+	result, err := restarted.ProcessClosure(ctx, admin, "manual-retry", blocked.ID)
+	if err != nil || result.State != "closed" {
+		t.Fatalf("administrator could not resume an unblocked account: %+v, %v", result, err)
+	}
+}
+
+func TestDueClosureWorkerContinuesPastInvalidRecords(t *testing.T) {
+	ctx := context.Background()
+	repo := avatarRepository(t)
+	service, err := p.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(-9 * 24 * time.Hour).Truncate(time.Millisecond)
+	service.Now = func() time.Time { return now }
+	service.ClosureEffects = &closureEffects{seen: map[string]bool{}, effects: map[string]int{}}
+	var healthy p.Closure
+	for _, subject := range []string{"invalid-first", "invalid-second", "healthy"} {
+		owner := p.Principal{Issuer: "https://issuer.invalid", Subject: subject}
+		if _, err := service.Ensure(ctx, owner, "Account"); err != nil {
+			t.Fatal(err)
+		}
+		item, err := service.RequestClosure(ctx, owner, "apply-for-closure", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if subject == "healthy" {
+			healthy = item
+		} else if _, err := repo.DB.ExecContext(ctx, `UPDATE profiles.closures SET result='{}' WHERE id=$1`, item.ID); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Hour)
+	}
+	now = healthy.CoolingEndsAt
+	if due, err := service.HasDueClosureWork(ctx); err != nil || !due {
+		t.Fatalf("unprocessed backlog is hidden: %v, %v", due, err)
+	}
+	for range 2 {
+		if results, err := service.ProcessDueClosures(ctx, 1); !errors.Is(err, p.ErrUnavailable) || len(results) != 0 {
+			t.Fatalf("bad records should be reported independently: %+v, %v", results, err)
+		}
+	}
+	if results, err := service.ProcessDueClosures(ctx, 1); err != nil || len(results) != 1 || results[0].ID != healthy.ID || results[0].State != "closed" {
+		t.Fatalf("invalid rows starved the healthy record: %+v, %v", results, err)
 	}
 }

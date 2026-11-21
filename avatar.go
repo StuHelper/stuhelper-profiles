@@ -144,6 +144,40 @@ func (s *Service) FlushAvatarReleases(ctx context.Context, p Principal) error {
 	return s.releaseAvatars(ctx, p, false)
 }
 
+// FlushPendingAvatarReleases visits a page of account queues. A zero cursor
+// starts a pass. Keep the returned cursor even on error so a failed account
+// cannot prevent other queues from being drained.
+func (s *Service) FlushPendingAvatarReleases(ctx context.Context, after Principal, limit int) (Principal, error) {
+	if (after != (Principal{}) && !after.Valid()) || limit < 1 || limit > 100 {
+		return after, ErrInput
+	}
+	repo, ok := s.repo.(interface {
+		PendingAvatarReleaseOwners(context.Context, Principal, int) ([]Principal, error)
+	})
+	if !ok {
+		return after, ErrUnavailable
+	}
+	scanCtx, cancelScan := context.WithTimeout(ctx, 3*time.Second)
+	owners, err := repo.PendingAvatarReleaseOwners(scanCtx, after, limit)
+	cancelScan()
+	if err != nil {
+		return after, err
+	}
+	next := after
+	var workErr error
+	for _, owner := range owners {
+		if ctx.Err() != nil {
+			return next, errors.Join(workErr, ctx.Err())
+		}
+		next = owner
+		workErr = errors.Join(workErr, s.FlushAvatarReleases(ctx, owner))
+	}
+	if len(owners) < limit {
+		next = Principal{}
+	}
+	return next, workErr
+}
+
 func (s *Service) releaseClosureAvatars(ctx context.Context, p Principal) error {
 	return s.releaseAvatars(ctx, p, true)
 }

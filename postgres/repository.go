@@ -45,7 +45,17 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 func (r *Repository) Ready(ctx context.Context) error { return r.DB.PingContext(ctx) }
 func (r *Repository) CheckRuntime(ctx context.Context) error {
 	var unsafe bool
-	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper OR rolcreaterole OR rolcreatedb OR has_schema_privilege(current_user,'profiles','CREATE') FROM pg_roles WHERE rolname=current_user`).Scan(&unsafe)
+	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper OR rolcreaterole OR rolcreatedb
+ OR has_schema_privilege(current_user,'profiles','CREATE') OR EXISTS (
+  SELECT 1 FROM (VALUES
+   ('profiles.expire_profile_request(text,text,text,timestamptz)'),
+   ('profiles.expire_closure_request(text,text,text,timestamptz)'),
+   ('profiles.erase_closed_account_requests(text,text)'),
+   ('profiles.cleanup_expired(timestamptz,integer)')
+  ) AS required(signature)
+  WHERE has_function_privilege(to_regprocedure(signature),'EXECUTE') IS NOT TRUE
+ )
+ FROM pg_roles WHERE rolname=current_user`).Scan(&unsafe)
 	if e != nil || unsafe {
 		return p.ErrUnavailable
 	}
@@ -145,7 +155,7 @@ func (r *Repository) UpdateAt(ctx context.Context, who p.Principal, key string, 
 	if state != "active" {
 		return current, p.ErrClosed
 	}
-	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2 AND key=$3 AND created_at<$4`, who.Issuer, who.Subject, key, now.Add(-24*time.Hour)); e != nil {
+	if _, e = tx.ExecContext(ctx, `SELECT profiles.expire_profile_request($1,$2,$3,$4)`, who.Issuer, who.Subject, key, now); e != nil {
 		return current, p.ErrUnavailable
 	}
 	b, _ := json.Marshal(in)

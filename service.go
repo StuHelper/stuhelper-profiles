@@ -134,6 +134,8 @@ type Service struct {
 	Facts            PublicFacts
 	closureMu        sync.Mutex
 	closureTurns     map[string]chan struct{}
+	dueClosureMu     sync.Mutex
+	dueClosureAfter  ClosureWorkCursor
 }
 
 func New(repo Repository) (*Service, error) {

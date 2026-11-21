@@ -105,7 +105,7 @@ func TestClosureLeaseDisconnectPersistenceReplayAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	role := name + "_runtime"
-	if _, err = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;`); err != nil {
+	if _, err = owner.Exec(runtimeRoleSQL(role)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -385,5 +385,114 @@ func TestProcessClosureUsesPersistedBlockerOverStaleLocalError(t *testing.T) {
 	got, err := svc.ProcessClosure(context.Background(), admin, "process-1", id)
 	if err != nil || got.State != "closed" {
 		t.Fatalf("expected ProcessClosure to continue using persisted state rather than exiting half-finished, got %+v err=%v", got, err)
+	}
+}
+
+type gatedClosureAssets struct {
+	p.ClosureEffects
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *gatedClosureAssets) ClearAssets(ctx context.Context, owner p.Principal, id string) error {
+	close(f.entered)
+	select {
+	case <-f.release:
+		return f.ClosureEffects.ClearAssets(ctx, owner, id)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	repo := avatarRepository(t)
+	admin := p.Principal{Issuer: "https://issuer.invalid", Subject: "admin"}
+	owner := p.Principal{Issuer: admin.Issuer, Subject: "account"}
+	now := time.Now().UTC().Add(-9 * 24 * time.Hour).Truncate(time.Millisecond)
+	mutator, err := p.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutator.ClosureAuthority = closureAuthority{}
+	mutator.Now = func() time.Time { return now }
+	if _, err := mutator.Ensure(ctx, owner, "Account"); err != nil {
+		t.Fatal(err)
+	}
+	request, err := mutator.RequestClosure(ctx, owner, "apply", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = request.CoolingEndsAt
+
+	effects := &closureEffects{seen: map[string]bool{}, effects: map[string]int{}}
+	first := &gatedClosureAssets{ClosureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
+	mutator.ClosureEffects = first
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := mutator.ProcessClosure(ctx, admin, "manual-first", request.ID)
+		oldDone <- err
+	}()
+	select {
+	case <-first.entered:
+	case err := <-oldDone:
+		t.Fatalf("first worker returned before entering assets: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// Advance the test lease clock without sleeping or altering the application clock.
+	if _, err := repo.DB.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=clock_timestamp()-interval '1 second' WHERE id=$1`, request.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	second := &gatedClosureAssets{ClosureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
+	restarted, err := p.New(&postgres.Repository{DB: repo.DB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted.Now = mutator.Now
+	restarted.ClosureEffects = second
+	newDone := make(chan error, 1)
+	go func() {
+		results, err := restarted.ProcessDueClosures(ctx, 1)
+		if err == nil && (len(results) != 1 || results[0].ID != request.ID || results[0].State != "closed") {
+			err = fmt.Errorf("replacement did not close the original request: %+v", results)
+		}
+		newDone <- err
+	}()
+	select {
+	case <-second.entered:
+	case err := <-newDone:
+		t.Fatalf("replacement worker returned before entering assets: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	close(first.release)
+	select {
+	case err := <-oldDone:
+		if !errors.Is(err, p.ErrConflict) {
+			t.Fatalf("expired worker advanced state: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	record, token, err := repo.AcquireClosureStep(ctx, request.ID, time.Second)
+	if err != nil || token != "" || len(record.Closure.CompletedSteps) != 0 {
+		t.Fatalf("expired worker changed the step or released the new lease: %+v, lease=%t, %v", record.Closure, token != "", err)
+	}
+
+	close(second.release)
+	select {
+	case err := <-newDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if effects.effects["assets"] != 1 {
+		t.Fatalf("retried external operation was applied %d times", effects.effects["assets"])
 	}
 }

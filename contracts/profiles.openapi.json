@@ -362,6 +362,87 @@
         }
       }
     },
+    "/api/v1/profiles/{id}/avatar": {
+      "get": {
+        "operationId": "getPublicProfileAvatar",
+        "description": "Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current approved avatar image",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile or current avatar unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Profiles or media temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profiles/me/closure": {
       "get": {
         "operationId": "getOwnClosure",
@@ -1377,10 +1458,13 @@
               "enum": [
                 "billing",
                 "open-platform",
+                "storage",
+                "storage-contribution",
                 "reviews",
                 "resources",
                 "favorites",
-                "qq-binding"
+                "qq-binding",
+                "verification"
               ]
             },
             "uniqueItems": true,

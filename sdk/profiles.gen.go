@@ -110,12 +110,15 @@ func (e ClosurePointsPolicy) Valid() bool {
 
 // Defines values for ClosureSkippedModules.
 const (
-	Billing      ClosureSkippedModules = "billing"
-	Favorites    ClosureSkippedModules = "favorites"
-	OpenPlatform ClosureSkippedModules = "open-platform"
-	QqBinding    ClosureSkippedModules = "qq-binding"
-	Resources    ClosureSkippedModules = "resources"
-	Reviews      ClosureSkippedModules = "reviews"
+	Billing             ClosureSkippedModules = "billing"
+	Favorites           ClosureSkippedModules = "favorites"
+	OpenPlatform        ClosureSkippedModules = "open-platform"
+	QqBinding           ClosureSkippedModules = "qq-binding"
+	Resources           ClosureSkippedModules = "resources"
+	Reviews             ClosureSkippedModules = "reviews"
+	Storage             ClosureSkippedModules = "storage"
+	StorageContribution ClosureSkippedModules = "storage-contribution"
+	Verification        ClosureSkippedModules = "verification"
 )
 
 // Valid indicates whether the value is a known member of the ClosureSkippedModules enum.
@@ -132,6 +135,12 @@ func (e ClosureSkippedModules) Valid() bool {
 	case Resources:
 		return true
 	case Reviews:
+		return true
+	case Storage:
+		return true
+	case StorageContribution:
+		return true
+	case Verification:
 		return true
 	default:
 		return false
@@ -631,6 +640,11 @@ type ClientInterface interface {
 	//
 	// Guest-readable basic profile and current academic facts selected by the owner. Includes no real name, identity document, contact, account identifier or contribution content. Related content requires its own authorized endpoints; unfinished nickname profiles are not published.
 	GetPublicProfile(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPublicProfileAvatar performs a GET /api/v1/profiles/{id}/avatar (the `GetPublicProfileAvatar` operationId) request.
+	//
+	// Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars.
+	GetPublicProfileAvatar(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListClosures performs a GET /api/v1/profiles/admin/closures (the `ListClosures` operationId) request.
@@ -818,6 +832,21 @@ func (c *Client) PreviewOwnProfile(ctx context.Context, params *PreviewOwnProfil
 // Guest-readable basic profile and current academic facts selected by the owner. Includes no real name, identity document, contact, account identifier or contribution content. Related content requires its own authorized endpoints; unfinished nickname profiles are not published.
 func (c *Client) GetPublicProfile(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPublicProfileRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPublicProfileAvatar performs a GET /api/v1/profiles/{id}/avatar (the `GetPublicProfileAvatar` operationId) request.
+//
+// Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars.
+func (c *Client) GetPublicProfileAvatar(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPublicProfileAvatarRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1341,6 +1370,40 @@ func NewGetPublicProfileRequest(server string, id openapi_types.UUID) (*http.Req
 	return req, nil
 }
 
+// NewGetPublicProfileAvatarRequest constructs an http.Request for the GetPublicProfileAvatar method
+func NewGetPublicProfileAvatarRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/profiles/%s/avatar", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1469,6 +1532,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetPublicProfileWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPublicProfileResponse, error)
+
+	// GetPublicProfileAvatarWithResponse performs a GET /api/v1/profiles/{id}/avatar (the `GetPublicProfileAvatar` operationId) request.
+	//
+	// Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetPublicProfileAvatarWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPublicProfileAvatarResponse, error)
 }
 
 type ListClosuresResponse struct {
@@ -2300,6 +2370,68 @@ func (r GetPublicProfileResponse) ContentType() string {
 	return ""
 }
 
+// GetPublicProfileAvatarResponse429Headers the declared response headers of an HTTP 429 response for GetPublicProfileAvatar
+type GetPublicProfileAvatarResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetPublicProfileAvatarResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetPublicProfileAvatarResponse429Headers
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPublicProfileAvatarResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetPublicProfileAvatarResponse) GetJSON429() *Error {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetPublicProfileAvatarResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPublicProfileAvatarResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPublicProfileAvatarResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPublicProfileAvatarResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPublicProfileAvatarResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListClosuresWithResponse performs a GET /api/v1/profiles/admin/closures (the `ListClosures` operationId) request.
 //
 // Application account only; shared SSO and other applications are untouched. Cancellation is allowed strictly before the seven-day deadline. Administrator processing checks current global account-closure permission, requires the deadline, and resumes persisted steps.
@@ -2461,6 +2593,19 @@ func (c *ClientWithResponses) GetPublicProfileWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseGetPublicProfileResponse(rsp)
+}
+
+// GetPublicProfileAvatarWithResponse performs a GET /api/v1/profiles/{id}/avatar (the `GetPublicProfileAvatar` operationId) request.
+//
+// Returns the currently bound avatar image of a published profile. The profile identifier cannot address draft uploads or previous avatars.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetPublicProfileAvatarWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPublicProfileAvatarResponse, error) {
+	rsp, err := c.GetPublicProfileAvatar(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPublicProfileAvatarResponse(rsp)
 }
 
 // ParseListClosuresResponse parses an HTTP response from a ListClosuresWithResponse call
@@ -3134,6 +3279,59 @@ func ParseGetPublicProfileResponse(rsp *http.Response) (*GetPublicProfileRespons
 		}
 		response.JSON503 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseGetPublicProfileAvatarResponse parses an HTTP response from a GetPublicProfileAvatarWithResponse call
+func ParseGetPublicProfileAvatarResponse(rsp *http.Response) (*GetPublicProfileAvatarResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPublicProfileAvatarResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetPublicProfileAvatarResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil

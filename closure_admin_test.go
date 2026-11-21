@@ -53,7 +53,7 @@ func TestClosureAdminFilteringChronologicalCursorAndAuditEvents(t *testing.T) {
 		t.Fatal(e)
 	}
 	role := name + "_runtime"
-	if _, e = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;`); e != nil {
+	if _, e = owner.Exec(runtimeRoleSQL(role)); e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { owner.Close(); db.Exec(`DROP DATABASE ` + name + ` WITH(FORCE)`); db.Exec(`DROP ROLE ` + role) })

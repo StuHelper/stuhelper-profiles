@@ -12,7 +12,9 @@ var ErrForbidden = errors.New("closure_forbidden")
 var ErrAssetsPending = errors.New("closure_assets_pending")
 
 const PointsPolicy = "forfeit_all_points_and_pending_deductions"
-const closureStepLeaseTTL = 5 * time.Second
+
+// Allow time for the external call and its separate persistence budget.
+const closureStepLeaseTTL = 10 * time.Second
 
 var closureSteps = []string{"assets", "sessions", "authorizations", "content"}
 
@@ -56,8 +58,9 @@ type ClosureRepository interface {
 	AccountState(context.Context, Principal) (string, error)
 }
 type closureStepLeaser interface {
-	AcquireClosureStep(context.Context, string, time.Duration) (ClosureRecord, bool, error)
-	ReleaseClosureStep(context.Context, string) error
+	AcquireClosureStep(context.Context, string, time.Duration) (ClosureRecord, string, error)
+	ReleaseClosureStep(context.Context, string, string) error
+	AdvanceLeasedClosureStep(context.Context, Principal, string, string, int, string, []string, []string, time.Time) (Closure, error)
 }
 type closureActorAdvancer interface {
 	AdvanceClosureBy(context.Context, Principal, string, int, string, []string, time.Time) (Closure, error)
@@ -196,6 +199,10 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return Closure{}, e
 	}
+	return s.processClosure(ctx, p, key, id, false)
+}
+
+func (s *Service) processClosure(ctx context.Context, p Principal, key, id string, automatic bool) (Closure, error) {
 	if !validClosureKey(key) || !validUUID(id) {
 		return Closure{}, ErrInput
 	}
@@ -219,7 +226,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 		return v, e
 	}
 	v = record.Closure
-	if v.State == "closed" || (waitedLocal && v.Revision != initialRevision && v.Blocker != "") {
+	if v.State == "closed" || ((automatic || (waitedLocal && v.Revision != initialRevision)) && v.Blocker != "") {
 		return v, nil
 	}
 	leaser, hasLeaser := r.(closureStepLeaser)
@@ -227,19 +234,21 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 		if ctx.Err() != nil {
 			return v, ctx.Err()
 		}
+		var lease string
 		if hasLeaser {
 			waitedPeer := false
 			for {
-				rec, leased, leaseErr := leaser.AcquireClosureStep(ctx, id, closureStepLeaseTTL)
+				rec, token, leaseErr := leaser.AcquireClosureStep(ctx, id, closureStepLeaseTTL)
 				if leaseErr != nil {
 					return v, leaseErr
 				}
 				record = rec
 				v = rec.Closure
-				if leased {
-					if waitedPeer && v.Revision != initialRevision && v.Blocker != "" {
+				if token != "" {
+					lease = token
+					if (automatic || (waitedPeer && v.Revision != initialRevision)) && v.Blocker != "" {
 						relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-						_ = leaser.ReleaseClosureStep(relCtx, id)
+						_ = leaser.ReleaseClosureStep(relCtx, id, lease)
 						cancelRel()
 						return v, nil
 					}
@@ -261,7 +270,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			step = len(v.CompletedSteps)
 			if step >= len(closureSteps) || v.State == "closed" {
 				relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-				_ = leaser.ReleaseClosureStep(relCtx, id)
+				_ = leaser.ReleaseClosureStep(relCtx, id, lease)
 				cancelRel()
 				return v, nil
 			}
@@ -311,6 +320,16 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			}
 			cancel()
 		}
+		// Stopping the worker is not a dependency failure. Leave an uncertain
+		// step eligible for a new process to reconcile with the same closure ID.
+		if automatic && err != nil && ctx.Err() != nil {
+			if hasLeaser {
+				relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+				_ = leaser.ReleaseClosureStep(relCtx, id, lease)
+				cancelRel()
+			}
+			return v, ctx.Err()
+		}
 		blocker := ""
 		if err != nil {
 			blocker = name + "_unavailable"
@@ -324,7 +343,9 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			pendingReasons = nil
 		}
 		persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		if rr, ok := r.(closureReasonsRepository); ok {
+		if hasLeaser {
+			v, e = leaser.AdvanceLeasedClosureStep(persistCtx, p, id, lease, step, blocker, pendingReasons, skipped, s.now())
+		} else if rr, ok := r.(closureReasonsRepository); ok {
 			v, e = rr.AdvanceClosureByWithReasons(persistCtx, p, id, step, blocker, pendingReasons, skipped, s.now())
 		} else if advancer, ok := r.(closureActorAdvancer); ok {
 			v, e = advancer.AdvanceClosureBy(persistCtx, p, id, step, blocker, skipped, s.now())
@@ -332,7 +353,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 			v, e = r.AdvanceClosure(persistCtx, id, step, blocker, skipped, s.now())
 		}
 		if e != nil && hasLeaser {
-			_ = leaser.ReleaseClosureStep(persistCtx, id)
+			_ = leaser.ReleaseClosureStep(persistCtx, id, lease)
 		}
 		cancelPersist()
 		if e != nil {

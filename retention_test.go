@@ -7,6 +7,7 @@ import (
 	"fmt"
 	p "github.com/StuHelper/stuhelper-profiles"
 	"github.com/StuHelper/stuhelper-profiles/postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 		t.Fatal(e)
 	}
 	role := name + "_runtime"
-	if _, e = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;`); e != nil {
+	if _, e = owner.Exec(runtimeRoleSQL(role)); e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { owner.Close(); db.Exec(`DROP DATABASE ` + name + ` WITH(FORCE)`); db.Exec(`DROP ROLE ` + role) })
@@ -48,12 +49,43 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if e = repo.CheckRuntime(ctx); e != nil {
 		t.Fatal(e)
 	}
+	t.Run("startup requires retention grants", func(t *testing.T) {
+		for _, signature := range []string{
+			"profiles.expire_profile_request(text,text,text,timestamptz)",
+			"profiles.expire_closure_request(text,text,text,timestamptz)",
+			"profiles.erase_closed_account_requests(text,text)",
+			"profiles.cleanup_expired(timestamptz,integer)",
+		} {
+			if _, err := owner.Exec("REVOKE EXECUTE ON FUNCTION " + signature + " FROM " + role); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.CheckRuntime(ctx); !errors.Is(err, p.ErrUnavailable) {
+				t.Errorf("runtime started without %s: %v", signature, err)
+			}
+			if _, err := owner.Exec("GRANT EXECUTE ON FUNCTION " + signature + " TO " + role); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := repo.CheckRuntime(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	s, _ := p.New(repo)
 	s.ClosureAuthority = closureAuthority{}
 	s.ClosureEffects = &closureEffects{seen: map[string]bool{}, effects: map[string]int{}}
 
-	now := time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC)
+	// Seed closure history through the service with the legacy schema, then
+	// apply the migration to test retention without replacing the DB clock.
+	if _, e = owner.Exec(`DROP TRIGGER IF EXISTS profiles_closures_guard_row ON profiles.closures;
+		ALTER TABLE profiles.closures DROP COLUMN IF EXISTS retention_terminal_at`); e != nil {
+		t.Fatal(e)
+	}
+
+	wall := time.Now().UTC()
+	cleanupTime := time.Date(wall.Year(), wall.Month(), 1, 12, 0, 0, 0, time.UTC).AddDate(0, -1, 0)
+	closureBoundary := cleanupTime.AddDate(-1, 0, 0)
+	now := closureBoundary.Add(-8 * 24 * time.Hour)
 	s.Now = func() time.Time { return now }
 
 	issuer := "https://issuer.invalid"
@@ -68,7 +100,6 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-
 	// Input bounds validation.
 	for _, badLimit := range []int{0, -1, 1001} {
 		if _, e = s.CleanupExpired(ctx, now, badLimit); !errors.Is(e, p.ErrInput) {
@@ -79,24 +110,24 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 		t.Fatal("expected ErrInput for zero time", e)
 	}
 
-	// 1. closedUser completes closure on 2026-02-28T11:59:59Z (strictly before 2027-02-28T12:00:00Z).
+	// 1. The closed request is the oldest eligible history.
 	cClosed, e := s.RequestClosure(ctx, closedUser, "req-closed", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	now = time.Date(2026, 2, 28, 11, 59, 59, 0, time.UTC)
+	now = closureBoundary.Add(-2 * time.Second)
 	cClosed, e = s.ProcessClosure(ctx, admin, "proc-closed", cClosed.ID)
 	if e != nil || cClosed.State != "closed" {
 		t.Fatal(cClosed, e)
 	}
 
-	// 2. cancelledUser cancels on 2026-02-28T11:59:59Z.
-	now = time.Date(2026, 2, 25, 12, 0, 0, 0, time.UTC)
+	// 2. The cancelled request expires one second before the cutoff.
+	now = closureBoundary.Add(-3 * 24 * time.Hour)
 	cCancelled, e := s.RequestClosure(ctx, cancelledUser, "req-cancel", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	now = time.Date(2026, 2, 28, 11, 59, 59, 0, time.UTC)
+	now = closureBoundary.Add(-time.Second)
 	if _, e = s.CancelClosure(ctx, cancelledUser, "do-cancel", cCancelled.ID); e != nil {
 		t.Fatal(e)
 	}
@@ -109,36 +140,36 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if _, e = owner.Exec("UPDATE profiles.closures SET updated_at=NULL WHERE id=$1", cCancelled.ID); e != nil {
 		t.Fatal(e)
 	}
+
+	// 3. pendingUser remains in cooling/incomplete state older than 12 months: must NEVER be deleted!
+	now = closureBoundary.Add(-8 * 24 * time.Hour)
+	cPending, e := s.RequestClosure(ctx, pendingUser, "req-pending", true)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	// 4. A cancellation at the exact 12-month boundary remains.
+	now = closureBoundary.Add(-3 * 24 * time.Hour)
+	cBoundary, e := s.RequestClosure(ctx, boundaryUser, "req-boundary", true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	now = closureBoundary
+	if _, e = s.CancelClosure(ctx, boundaryUser, "cancel-boundary", cBoundary.ID); e != nil {
+		t.Fatal(e)
+	}
 	for range 2 {
 		if e = postgres.Migrate(ctx, owner); e != nil {
 			t.Fatal(e)
 		}
 	}
 	var restored time.Time
-	if e = owner.QueryRow("SELECT updated_at FROM profiles.closures WHERE id=$1", cCancelled.ID).Scan(&restored); e != nil || !restored.Equal(now) {
-		t.Fatalf("cancelled history timestamp %v, want %v: %v", restored, now, e)
+	wantCancelled := closureBoundary.Add(-time.Second)
+	if e = owner.QueryRow("SELECT updated_at FROM profiles.closures WHERE id=$1", cCancelled.ID).Scan(&restored); e != nil || !restored.Equal(wantCancelled) {
+		t.Fatalf("cancelled history timestamp %v, want %v: %v", restored, wantCancelled, e)
 	}
 
-	// 3. pendingUser remains in cooling/incomplete state older than 12 months: must NEVER be deleted!
-	now = time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC)
-	cPending, e := s.RequestClosure(ctx, pendingUser, "req-pending", true)
-	if e != nil {
-		t.Fatal(e)
-	}
-
-	// 4. boundaryUser cancels at exact 12-month boundary 2026-02-28T12:00:00Z (for leap day 2028-02-29 - 12m = 2027-02-28; here test 2027-02-28T12:00:00Z - 12m = 2026-02-28T12:00:00Z).
-	now = time.Date(2026, 2, 25, 12, 0, 0, 0, time.UTC)
-	cBoundary, e := s.RequestClosure(ctx, boundaryUser, "req-boundary", true)
-	if e != nil {
-		t.Fatal(e)
-	}
-	now = time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)
-	if _, e = s.CancelClosure(ctx, boundaryUser, "cancel-boundary", cBoundary.ID); e != nil {
-		t.Fatal(e)
-	}
-
-	// Create profile update idempotency requests around 24h boundary before cleanupTime = 2027-02-28T12:00:00Z.
-	cleanupTime := time.Date(2027, 2, 28, 12, 0, 0, 0, time.UTC)
+	// Create profile update idempotency requests around the 24-hour boundary.
 	prof, e := s.Get(ctx, cancelledUser)
 	if e != nil {
 		t.Fatal(e)
@@ -157,18 +188,46 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 		t.Fatal(e)
 	}
 
-	// Bounded batchLimit=1 deletes 1 request, 1 closure_request, and 1 expired closure (+ its events) per call.
+	// Each call can delete only one event. The closure remains until its
+	// events are gone, including when another process resumes the sweep.
 	r1, e := s.CleanupExpired(ctx, cleanupTime, 1)
-	if e != nil || r1.RequestsDeleted != 1 || r1.ClosureRequestsDeleted != 1 || r1.ClosuresDeleted != 1 || r1.ClosureEventsDeleted == 0 {
+	if e != nil || r1.RequestsDeleted != 1 || r1.ClosureRequestsDeleted != 1 || r1.ClosuresDeleted != 0 || r1.ClosureEventsDeleted != 1 {
 		t.Fatalf("unexpected batch 1 cleanup result: %+v, err=%v", r1, e)
 	}
-	r2, e := s.CleanupExpired(ctx, cleanupTime, 100)
-	if e != nil || r2.RequestsDeleted != 1 || r2.ClosuresDeleted != 1 || r2.ClosureEventsDeleted == 0 {
+	if _, e = repo.Closure(ctx, cClosed.ID); e != nil {
+		t.Fatalf("closed request was deleted ahead of its remaining audit events: %v", e)
+	}
+	checkEvents := func(id string, want int) {
+		t.Helper()
+		var got int
+		if err := runtime.QueryRow("SELECT count(*) FROM profiles.closure_events WHERE closure_id=$1", id).Scan(&got); err != nil || got != want {
+			t.Fatalf("closure %s has %d audit events, want %d: %v", id, got, want, err)
+		}
+	}
+	checkEvents(cClosed.ID, 5)
+	restartDB, e := sql.Open("pgx", dsn+" dbname="+name+" user="+role)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { restartDB.Close() })
+	restarted, e := p.New(&postgres.Repository{DB: restartDB})
+	if e != nil {
+		t.Fatal(e)
+	}
+	r2, e := restarted.CleanupExpired(ctx, cleanupTime, 1)
+	if e != nil || r2.RequestsDeleted != 1 || r2.ClosuresDeleted != 0 || r2.ClosureEventsDeleted != 1 {
 		t.Fatalf("unexpected batch 2 cleanup result: %+v, err=%v", r2, e)
 	}
-	r3, e := s.CleanupExpired(ctx, cleanupTime, 100)
-	if e != nil || r3 != (p.CleanupResult{}) {
-		t.Fatalf("expected idempotent zero cleanup on third pass: %+v, err=%v", r3, e)
+	checkEvents(cClosed.ID, 4)
+	drained, e := restarted.CleanupExpired(ctx, cleanupTime, 100)
+	if e != nil || drained.RequestsDeleted != 0 || drained.ClosuresDeleted != 2 || drained.ClosureEventsDeleted != 6 {
+		t.Fatalf("unexpected drain result: %+v, err=%v", drained, e)
+	}
+	checkEvents(cClosed.ID, 0)
+	checkEvents(cBoundary.ID, 2)
+	again, e := restarted.CleanupExpired(ctx, cleanupTime, 100)
+	if e != nil || again != (p.CleanupResult{}) {
+		t.Fatalf("expected idempotent zero cleanup after drain: %+v, err=%v", again, e)
 	}
 
 	// Verify boundary request, boundary closure, and incomplete closure survived!
@@ -192,4 +251,81 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if e = postgres.Migrate(ctx, owner); e != nil {
 		t.Fatal("repeat migration failed", e)
 	}
+
+	t.Run("Ops runtime role", func(t *testing.T) {
+		now = wall.Truncate(time.Millisecond)
+		person := p.Principal{Issuer: issuer, Subject: "restricted_user"}
+		profile, err := s.Ensure(ctx, person, "Restricted")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.Save(ctx, person, "restricted-profile", profile.Revision, "NewName"); err != nil {
+			t.Fatalf("save with Ops runtime privileges: %v", err)
+		}
+		closure, err := s.RequestClosure(ctx, person, "restricted-closure", true)
+		if err != nil {
+			t.Fatalf("request closure with Ops runtime privileges: %v", err)
+		}
+		cancelled, err := s.CancelClosure(ctx, person, "cancel-restricted", closure.ID)
+		if err != nil || cancelled.State != "cancelled" {
+			t.Fatal(cancelled, err)
+		}
+
+		for _, mutation := range []string{
+			"id='reassigned'",
+			"issuer='https://wrong.example'",
+			"subject='other'",
+			"created_at=created_at-interval '2 years'",
+			"retention_terminal_at=statement_timestamp()-interval '2 years'",
+			"state='processing'",
+		} {
+			tx, err := runtime.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = tx.ExecContext(ctx, "UPDATE profiles.closures SET "+mutation+" WHERE id=$1", closure.ID)
+			_ = tx.Rollback()
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Errorf("runtime mutation %q did not get permission denied: %v", mutation, err)
+			}
+		}
+		// The ordinary update time still belongs to the application. It does
+		// not govern how long the database must keep terminal audit history.
+		if _, err := runtime.Exec("UPDATE profiles.closures SET updated_at=$2 WHERE id=$1", closure.ID, now.AddDate(-2, 0, 0)); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, table := range []string{"requests", "events", "closure_requests", "closure_events", "closures"} {
+			if _, err := runtime.Exec("DELETE FROM profiles." + table + " WHERE false"); err == nil {
+				t.Fatalf("runtime may directly delete profiles.%s", table)
+			}
+		}
+		future := now.AddDate(10, 0, 0)
+		if _, err := runtime.Exec("SELECT profiles.erase_closed_account_requests($1,$2)", issuer, person.Subject); err == nil {
+			t.Fatal("runtime erased an active account's receipts")
+		}
+		if _, err := runtime.Exec("SELECT profiles.expire_profile_request($1,$2,$3,$4)", issuer, person.Subject, "restricted-profile", future); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runtime.Exec("SELECT profiles.expire_closure_request($1,$2,$3,$4)", issuer, person.Subject, "restricted-closure", future); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CleanupExpired(ctx, future, 100); err != nil {
+			t.Fatal(err)
+		}
+		var requests, closureRequests, closureEvents int
+		if err := runtime.QueryRow(`SELECT
+		 (SELECT count(*) FROM profiles.requests WHERE issuer=$1 AND subject=$2),
+		 (SELECT count(*) FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2),
+		 (SELECT count(*) FROM profiles.closure_events WHERE closure_id=$3)`, issuer, person.Subject, closure.ID).Scan(&requests, &closureRequests, &closureEvents); err != nil {
+			t.Fatal(err)
+		}
+		if requests != 1 || closureRequests != 2 || closureEvents != 2 {
+			t.Fatalf("future cutoff removed live records: %d %d %d", requests, closureRequests, closureEvents)
+		}
+		if _, e = repo.Closure(ctx, cancelled.ID); e != nil {
+			t.Fatal("future cutoff removed recent cancellation", e)
+		}
+	})
 }

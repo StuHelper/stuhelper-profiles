@@ -25,6 +25,10 @@ optional:
     api: 1
   - id: qq-binding
     api: 1
+  - id: storage
+    api: 1
+  - id: storage-contribution
+    api: 1
 capabilities:
   - profiles.information-query
   - profiles.group-card.read
@@ -39,6 +43,7 @@ scenario_tests:
     - avatar_test.go#TestAvatarUnknownCommitPreservesActiveReference
     - avatar_test.go#TestAvatarRecoveryIntentSurvivesUnavailableReconciliation
     - avatar_test.go#TestAvatarConcurrentReactivationAndIdenticalRequests
+    - avatar_recovery_test.go#TestFlushPendingAvatarReleasesAfterRestartSkipsActiveVersionsAndAdvancesPastFailures
     - integration_test.go#TestProfileOwnershipReplayConcurrentRevisionAndRuntimeRole
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
     - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
@@ -48,6 +53,7 @@ scenario_tests:
     - preview_test.go#TestOwnProfileDraftPreviewWithoutDatabaseMutation
     - public_batch_test.go#TestPublicBatchAndIDsEliminateNPlusOneAndEnforceVisibility
     - avatar_test.go#TestAvatarMediaLifecyclePublicInformationAndClosureRelease
+    - avatar_public_test.go#TestPublicAvatarRequiresPublishedProfileAndActiveVersion
   PC-10:
     - public_test.go#TestPublicProfileDefaultsUnicodeCompletionAndVisibility
     - validation_test.go#TestBioCRLFNormalizationAndFieldValidationReasons
@@ -71,6 +77,11 @@ scenario_tests:
     - capability_test.go#TestGroupCardCapabilityRegistration
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
+  PC-13:
+    - closure_due_test.go#TestProcessDueClosuresAtDeadlineResumesAfterRestartAndLeavesBlockedCasesForAdmin
+    - closure_due_test.go#TestDueClosureWorkerContinuesPastInvalidRecords
+    - closure_concurrency_idempotency_test.go#TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease
+    - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection
     - account_state_query_test.go#TestAccountStateIsolationClosureErasureAndInformationQuery
