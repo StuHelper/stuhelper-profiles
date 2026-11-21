@@ -389,7 +389,7 @@ func TestProcessClosureUsesPersistedBlockerOverStaleLocalError(t *testing.T) {
 }
 
 type gatedClosureAssets struct {
-	*closureEffects
+	p.ClosureEffects
 	entered chan struct{}
 	release chan struct{}
 }
@@ -398,7 +398,7 @@ func (f *gatedClosureAssets) ClearAssets(ctx context.Context, owner p.Principal,
 	close(f.entered)
 	select {
 	case <-f.release:
-		return f.closureEffects.ClearAssets(ctx, owner, id)
+		return f.ClosureEffects.ClearAssets(ctx, owner, id)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -427,7 +427,7 @@ func TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease(t *testing.T
 	now = request.CoolingEndsAt
 
 	effects := &closureEffects{seen: map[string]bool{}, effects: map[string]int{}}
-	first := &gatedClosureAssets{closureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
+	first := &gatedClosureAssets{ClosureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
 	mutator.ClosureEffects = first
 	oldDone := make(chan error, 1)
 	go func() {
@@ -436,6 +436,8 @@ func TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease(t *testing.T
 	}()
 	select {
 	case <-first.entered:
+	case err := <-oldDone:
+		t.Fatalf("first worker returned before entering assets: %v", err)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
@@ -444,7 +446,7 @@ func TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease(t *testing.T
 		t.Fatal(err)
 	}
 
-	second := &gatedClosureAssets{closureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
+	second := &gatedClosureAssets{ClosureEffects: effects, entered: make(chan struct{}), release: make(chan struct{})}
 	restarted, err := p.New(&postgres.Repository{DB: repo.DB})
 	if err != nil {
 		t.Fatal(err)
@@ -461,6 +463,8 @@ func TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease(t *testing.T
 	}()
 	select {
 	case <-second.entered:
+	case err := <-newDone:
+		t.Fatalf("replacement worker returned before entering assets: %v", err)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
