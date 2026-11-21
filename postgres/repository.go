@@ -45,7 +45,17 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 func (r *Repository) Ready(ctx context.Context) error { return r.DB.PingContext(ctx) }
 func (r *Repository) CheckRuntime(ctx context.Context) error {
 	var unsafe bool
-	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper OR rolcreaterole OR rolcreatedb OR has_schema_privilege(current_user,'profiles','CREATE') FROM pg_roles WHERE rolname=current_user`).Scan(&unsafe)
+	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper OR rolcreaterole OR rolcreatedb
+ OR has_schema_privilege(current_user,'profiles','CREATE') OR EXISTS (
+  SELECT 1 FROM (VALUES
+   ('profiles.expire_profile_request(text,text,text,timestamptz)'),
+   ('profiles.expire_closure_request(text,text,text,timestamptz)'),
+   ('profiles.erase_closed_account_requests(text,text)'),
+   ('profiles.cleanup_expired(timestamptz,integer)')
+  ) AS required(signature)
+  WHERE has_function_privilege(to_regprocedure(signature),'EXECUTE') IS NOT TRUE
+ )
+ FROM pg_roles WHERE rolname=current_user`).Scan(&unsafe)
 	if e != nil || unsafe {
 		return p.ErrUnavailable
 	}

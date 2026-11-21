@@ -49,6 +49,27 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if e = repo.CheckRuntime(ctx); e != nil {
 		t.Fatal(e)
 	}
+	t.Run("startup requires retention grants", func(t *testing.T) {
+		for _, signature := range []string{
+			"profiles.expire_profile_request(text,text,text,timestamptz)",
+			"profiles.expire_closure_request(text,text,text,timestamptz)",
+			"profiles.erase_closed_account_requests(text,text)",
+			"profiles.cleanup_expired(timestamptz,integer)",
+		} {
+			if _, err := owner.Exec("REVOKE EXECUTE ON FUNCTION " + signature + " FROM " + role); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.CheckRuntime(ctx); !errors.Is(err, p.ErrUnavailable) {
+				t.Errorf("runtime started without %s: %v", signature, err)
+			}
+			if _, err := owner.Exec("GRANT EXECUTE ON FUNCTION " + signature + " TO " + role); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := repo.CheckRuntime(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	s, _ := p.New(repo)
 	s.ClosureAuthority = closureAuthority{}
