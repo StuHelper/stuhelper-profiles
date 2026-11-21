@@ -274,3 +274,44 @@ func TestProcessDueClosuresAtDeadlineResumesAfterRestartAndLeavesBlockedCasesFor
 		t.Fatalf("administrator could not resume an unblocked account: %+v, %v", result, err)
 	}
 }
+
+func TestDueClosureWorkerContinuesPastInvalidRecords(t *testing.T) {
+	ctx := context.Background()
+	repo := avatarRepository(t)
+	service, err := p.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(-9 * 24 * time.Hour).Truncate(time.Millisecond)
+	service.Now = func() time.Time { return now }
+	service.ClosureEffects = &closureEffects{seen: map[string]bool{}, effects: map[string]int{}}
+	var healthy p.Closure
+	for _, subject := range []string{"invalid-first", "invalid-second", "healthy"} {
+		owner := p.Principal{Issuer: "https://issuer.invalid", Subject: subject}
+		if _, err := service.Ensure(ctx, owner, "Account"); err != nil {
+			t.Fatal(err)
+		}
+		item, err := service.RequestClosure(ctx, owner, "apply-for-closure", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if subject == "healthy" {
+			healthy = item
+		} else if _, err := repo.DB.ExecContext(ctx, `UPDATE profiles.closures SET result='{}' WHERE id=$1`, item.ID); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Hour)
+	}
+	now = healthy.CoolingEndsAt
+	if due, err := service.HasDueClosureWork(ctx); err != nil || !due {
+		t.Fatalf("unprocessed backlog is hidden: %v, %v", due, err)
+	}
+	for range 2 {
+		if results, err := service.ProcessDueClosures(ctx, 1); !errors.Is(err, p.ErrUnavailable) || len(results) != 0 {
+			t.Fatalf("bad records should be reported independently: %+v, %v", results, err)
+		}
+	}
+	if results, err := service.ProcessDueClosures(ctx, 1); err != nil || len(results) != 1 || results[0].ID != healthy.ID || results[0].State != "closed" {
+		t.Fatalf("invalid rows starved the healthy record: %+v, %v", results, err)
+	}
+}

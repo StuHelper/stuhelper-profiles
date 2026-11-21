@@ -10,7 +10,7 @@ profiles 按 issuer 与 subject 保存本人昵称、头像引用、简介、公
 
 ## 模块边界
 
-[module.yaml](module.yaml) 声明 platform 为必需依赖，identity、media、verification、billing、reviews、resources、favorites、open-platform 和 qq-binding 为可选依赖。`profiles.manage` 依赖 identity 提供当前账号。
+[module.yaml](module.yaml) 声明 platform 为必需依赖。identity、media、verification、billing、reviews、resources、favorites、open-platform、qq-binding、storage 和 storage-contribution 为可选依赖。`profiles.manage` 依赖 identity 提供当前账号。
 
 宿主通过 verification 的公开服务取得学校与认证事实，通过 media 管理头像文件与引用，通过其他模块的公开端口处理注销影响。公开主页只返回本模块公开资料和获准展示的事实，评价与资料内容由各自模块按当前权限提供。[个人中心规格](https://github.com/StuHelper/stuhelper/blob/develop/docs/spec/personal-center.md)
 
@@ -56,17 +56,19 @@ profiles 按 issuer 与 subject 保存本人昵称、头像引用、简介、公
 
 资产步骤须核对 Ivory 余额、退款和待确认支付，并原子冻结后续账务写入，清零积分与待抵扣记录。内容步骤移除公开账号关联、清理收藏与 QQ 绑定、释放头像引用，并保留公开内容本身。共享 SSO 及其他应用的账号由各自服务管理。
 
-宿主只有在持久安装历史明确证明模块从未安装时，才可跳过对应步骤。资产可记录 billing，授权可记录 open-platform，内容可记录 reviews、resources、favorites、qq-binding。曾安装的模块不可用、记录缺失或不可读时保留申请等待处理。
+宿主根据持久安装历史确认从未安装的模块并记录跳过原因。资产核对涉及 billing，授权撤回涉及 open-platform、storage、storage-contribution，内容处理涉及 reviews、resources、favorites、qq-binding 和 verification。已安装模块不可用或无法核实安装历史时，申请等待处理。
 
-各外部操作按申请 ID 幂等。结果不明时先核实执行状态，再决定重试。处理通过短租约互斥，已执行步骤在客户端断连时仍尝试保存。重复处理读取当前进度，记录重试和实际操作者。
+各外部操作按申请 ID 幂等。结果不明时先核实执行状态，再决定重试。每步凭有效租约保存结果或释放租约。已完成的步骤在调用断开时仍尝试保存。重复处理读取当前进度，记录重试和实际操作者。
 
 资产阻断用 `assets_pending` 表示，`pending_reasons` 可包括 Ivory 余额未清、退款处理中和支付待确认。完成注销后清空昵称、头像、简介与个人回执，重置展示偏好和群名片许可，并保存禁止自动重建的标记。
 
 管理列表按创建时间和 ID 升序分页，`after` 为规范小写 UUID，单页最多 100 条。`QueryClosures` 支持按 `state`、`actionable`、`blocker` 筛选并返回 `next_cursor`。`ListClosureEvents` 按最新时间返回审计事件。
 
-`DueClosures` 为管理员列出到期及待重试的注销。宿主的 `ProcessDueClosures` 每次最多按顺序处理 100 个到期或中断的申请，复用原申请与已保存步骤。资产或依赖阻断留在管理队列，由有权管理员续办。
+`DueClosures` 为管理员列出到期及待重试的注销。宿主的 `ProcessDueClosures` 每次最多处理 100 个到期或中断的申请，复用原申请与已保存步骤。遇到异常申请仍继续分页。资产或依赖阻断留在管理队列，由有权管理员续办。
 
-`CleanupExpired` 在 3 秒内处理每类至多 1000 条回执或终态申请。幂等回执保留 24 小时，已关闭或已撤销的申请及其事件保留 12 个自然月。未完成申请与关闭标记继续保留。
+宿主可用 `HasDueClosureWork` 读取积压。会话等业务依赖未装配时可用这个端口报告到期任务。
+
+`CleanupExpired` 在 3 秒内按类别处理每批至多 1000 条回执、终态申请和注销审计。幂等回执保留 24 小时。数据库记录终态时间，满 12 个自然月后分批清事件，事件清完再删除对应申请。未完成申请与关闭标记继续保留。
 
 迁移建立受限清理函数，宿主运行身份通过显式授权执行。过期清理以数据库当前时刻为上限，立即清理本人回执须完成注销。普通运行身份不能直接删除上述回执或注销审计。
 

@@ -25,6 +25,10 @@ optional:
     api: 1
   - id: qq-binding
     api: 1
+  - id: storage
+    api: 1
+  - id: storage-contribution
+    api: 1
 capabilities:
   - profiles.information-query
   - profiles.group-card.read
@@ -75,6 +79,8 @@ scenario_tests:
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   PC-13:
     - closure_due_test.go#TestProcessDueClosuresAtDeadlineResumesAfterRestartAndLeavesBlockedCasesForAdmin
+    - closure_due_test.go#TestDueClosureWorkerContinuesPastInvalidRecords
+    - closure_concurrency_idempotency_test.go#TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease
     - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
   IQ-02:
     - information_test.go#TestInformationProfileScopeAndSelection

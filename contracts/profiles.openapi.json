@@ -1458,10 +1458,13 @@
               "enum": [
                 "billing",
                 "open-platform",
+                "storage",
+                "storage-contribution",
                 "reviews",
                 "resources",
                 "favorites",
-                "qq-binding"
+                "qq-binding",
+                "verification"
               ]
             },
             "uniqueItems": true,

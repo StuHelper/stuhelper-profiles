@@ -13,6 +13,7 @@ import (
 const closureSchema = `
 CREATE TABLE IF NOT EXISTS profiles.closures(id text PRIMARY KEY,issuer text NOT NULL,subject text NOT NULL,state text NOT NULL CHECK(state IN('cooling','cancelled','awaiting_assets','processing','closed')),result jsonb NOT NULL,created_at timestamptz NOT NULL);
 ALTER TABLE profiles.closures ADD COLUMN IF NOT EXISTS processing_until timestamptz;
+ALTER TABLE profiles.closures ADD COLUMN IF NOT EXISTS processing_lease_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS profiles_active_closure ON profiles.closures(issuer,subject) WHERE state<>'cancelled';
 CREATE INDEX IF NOT EXISTS profiles_closures_owner_created_idx ON profiles.closures(issuer,subject,created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
@@ -58,7 +59,11 @@ func closureScan(row scanner) (p.ClosureRecord, error) {
 	return decodeClosureRow(owner, raw)
 }
 func (r *Repository) Closure(ctx context.Context, id string) (p.ClosureRecord, error) {
-	return closureScan(r.DB.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id=$1`, id))
+	record, err := closureScan(r.DB.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE id=$1`, id))
+	if err == nil && record.Closure.ID != id {
+		return p.ClosureRecord{}, p.ErrUnavailable
+	}
+	return record, err
 }
 func (r *Repository) CurrentClosure(ctx context.Context, who p.Principal) (p.Closure, error) {
 	v, e := closureScan(r.DB.QueryRowContext(ctx, `SELECT issuer,subject,result FROM profiles.closures WHERE issuer=$1 AND subject=$2 ORDER BY created_at DESC,id DESC LIMIT 1`, who.Issuer, who.Subject))
@@ -69,25 +74,32 @@ func (r *Repository) Closures(ctx context.Context, after string, limit int) ([]p
 	return page.Items, e
 }
 
-// AcquireClosureStep claims a short wall-clock lease on an active closure so concurrent callers serialize step RPCs without holding DB connections.
-func (r *Repository) AcquireClosureStep(ctx context.Context, id string, ttl time.Duration) (p.ClosureRecord, bool, error) {
+// AcquireClosureStep returns a lease token or the current record when a peer owns the lease.
+func (r *Repository) AcquireClosureStep(ctx context.Context, id string, ttl time.Duration) (p.ClosureRecord, string, error) {
 	ms := ttl.Milliseconds()
 	if ms < 1 {
 		ms = 1
 	}
-	rec, err := closureScan(r.DB.QueryRowContext(ctx, `UPDATE profiles.closures SET processing_until=clock_timestamp()+($2*interval '1 millisecond') WHERE id=$1 AND state IN('awaiting_assets','processing') AND (processing_until IS NULL OR processing_until<=clock_timestamp()) RETURNING issuer,subject,result`, id, ms))
-	if err == nil {
-		return rec, true, nil
+	var owner p.Principal
+	var raw []byte
+	var token string
+	err := r.DB.QueryRowContext(ctx, `UPDATE profiles.closures
+ SET processing_until=clock_timestamp()+($2*interval '1 millisecond'),processing_lease_id=gen_random_uuid()::text
+ WHERE id=$1 AND state IN('awaiting_assets','processing') AND (processing_until IS NULL OR processing_until<=clock_timestamp())
+ RETURNING issuer,subject,result,processing_lease_id`, id, ms).Scan(&owner.Issuer, &owner.Subject, &raw, &token)
+	if errors.Is(err, sql.ErrNoRows) {
+		rec, err := r.Closure(ctx, id)
+		return rec, "", err
 	}
-	if !errors.Is(err, p.ErrNotFound) {
-		return rec, false, err
+	if err != nil {
+		return p.ClosureRecord{}, "", p.ErrUnavailable
 	}
-	rec, err = r.Closure(ctx, id)
-	return rec, false, err
+	rec, err := decodeClosureRow(owner, raw)
+	return rec, token, err
 }
 
-func (r *Repository) ReleaseClosureStep(ctx context.Context, id string) error {
-	if _, err := r.DB.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL WHERE id=$1`, id); err != nil {
+func (r *Repository) ReleaseClosureStep(ctx context.Context, id, lease string) error {
+	if _, err := r.DB.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL,processing_lease_id=NULL WHERE id=$1 AND processing_lease_id=$2`, id, lease); err != nil {
 		return p.ErrUnavailable
 	}
 	return nil
@@ -187,6 +199,9 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 		if e != nil {
 			return out, e
 		}
+		if record.Closure.ID != id {
+			return out, p.ErrUnavailable
+		}
 		out = record.Closure
 		switch action {
 		case "cancel":
@@ -254,6 +269,17 @@ func (r *Repository) AdvanceClosureWithReasons(ctx context.Context, id string, s
 }
 
 func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Principal, id string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
+	return r.advanceClosure(ctx, actor, id, "", step, blocker, pendingReasons, skipped, now)
+}
+
+func (r *Repository) AdvanceLeasedClosureStep(ctx context.Context, actor p.Principal, id, lease string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
+	if lease == "" {
+		return p.Closure{}, p.ErrInput
+	}
+	return r.advanceClosure(ctx, actor, id, lease, step, blocker, pendingReasons, skipped, now)
+}
+
+func (r *Repository) advanceClosure(ctx context.Context, actor p.Principal, id, lease string, step int, blocker string, pendingReasons, skipped []string, now time.Time) (p.Closure, error) {
 	if actor.Issuer == "" || actor.Subject == "" {
 		actor = p.Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}
 	}
@@ -277,8 +303,17 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 		return p.Closure{}, e
 	}
 	out := record.Closure
+	var authorized bool
+	if e := tx.QueryRowContext(ctx, `SELECT CASE WHEN $2='' THEN processing_until IS NULL OR processing_until<=clock_timestamp()
+ ELSE COALESCE(processing_lease_id=$2 AND processing_until>clock_timestamp(),false) END
+ FROM profiles.closures WHERE id=$1`, id, lease).Scan(&authorized); e != nil {
+		return out, p.ErrUnavailable
+	}
+	if !authorized {
+		return out, p.ErrConflict
+	}
 	if len(out.CompletedSteps) != step || out.State == "closed" {
-		if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL WHERE id=$1`, id); e != nil {
+		if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET processing_until=NULL,processing_lease_id=NULL WHERE id=$1`, id); e != nil {
 			return out, p.ErrUnavailable
 		}
 		if e = tx.Commit(); e != nil {
@@ -293,7 +328,7 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 	if step < 0 || step >= len(steps) {
 		return out, p.ErrInput
 	}
-	allowed := [][]string{{"billing"}, {}, {"open-platform"}, {"reviews", "resources", "favorites", "qq-binding"}}
+	allowed := [][]string{{"billing"}, {}, {"open-platform", "storage", "storage-contribution"}, {"reviews", "resources", "favorites", "qq-binding", "verification"}}
 	for _, name := range skipped {
 		if !slices.Contains(allowed[step], name) {
 			return out, p.ErrInput
@@ -337,7 +372,7 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 		}
 	}
 	raw, _ := json.Marshal(out)
-	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,updated_at=$4,processing_until=NULL WHERE id=$1`, id, out.State, raw, now); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,updated_at=$4,processing_until=NULL,processing_lease_id=NULL WHERE id=$1`, id, out.State, raw, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	if out.State == "closed" {

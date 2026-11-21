@@ -21,6 +21,15 @@ var allowedPendingReasons = []string{
 
 var closureWorker = Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}
 
+type ClosureWorkCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+type closureWorkRepository interface {
+	RunnableClosures(context.Context, time.Time, ClosureWorkCursor, int) ([]ClosureWorkCursor, error)
+}
+
 // AssetsPendingError conveys sanitized asset settlement blocker reasons while
 // unwrapping to ErrAssetsPending.
 type AssetsPendingError struct {
@@ -95,15 +104,12 @@ func (s *Service) ProcessDueClosures(ctx context.Context, limit int) ([]Closure,
 	if limit < 1 || limit > 100 {
 		return nil, ErrInput
 	}
-	repo, ok := s.repo.(interface {
-		RunnableClosures(context.Context, time.Time, int) ([]Closure, error)
-	})
-	if !ok || s.ClosureEffects == nil {
+	if s.ClosureEffects == nil {
 		return nil, ErrUnavailable
 	}
-	scanCtx, cancelScan := context.WithTimeout(ctx, 3*time.Second)
-	requests, err := repo.RunnableClosures(scanCtx, s.now(), limit)
-	cancelScan()
+	s.dueClosureMu.Lock()
+	defer s.dueClosureMu.Unlock()
+	requests, err := s.dueClosureWork(ctx, s.dueClosureAfter, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +119,9 @@ func (s *Service) ProcessDueClosures(ctx context.Context, limit int) ([]Closure,
 		if ctx.Err() != nil {
 			return results, errors.Join(workErr, ctx.Err())
 		}
+		// Advance even on a malformed or unavailable record. The next pass
+		// revisits failures without blocking later candidates in this pass.
+		s.dueClosureAfter = item
 		result, err := s.processClosure(ctx, closureWorker, "due-"+item.ID, item.ID, true)
 		switch {
 		case err == nil:
@@ -123,5 +132,24 @@ func (s *Service) ProcessDueClosures(ctx context.Context, limit int) ([]Closure,
 			workErr = errors.Join(workErr, err)
 		}
 	}
+	if len(requests) < limit {
+		s.dueClosureAfter = ClosureWorkCursor{}
+	}
 	return results, workErr
+}
+
+// HasDueClosureWork checks for automatic work when the host cannot run effects.
+func (s *Service) HasDueClosureWork(ctx context.Context) (bool, error) {
+	requests, err := s.dueClosureWork(ctx, ClosureWorkCursor{}, 1)
+	return len(requests) != 0, err
+}
+
+func (s *Service) dueClosureWork(ctx context.Context, after ClosureWorkCursor, limit int) ([]ClosureWorkCursor, error) {
+	repo, ok := s.repo.(closureWorkRepository)
+	if !ok {
+		return nil, ErrUnavailable
+	}
+	scanCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return repo.RunnableClosures(scanCtx, s.now(), after, limit)
 }
