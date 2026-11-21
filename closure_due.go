@@ -19,6 +19,8 @@ var allowedPendingReasons = []string{
 	PendingReasonPaymentPendingReconciliation,
 }
 
+var closureWorker = Principal{Issuer: "urn:stuhelper:profiles-service", Subject: "closure"}
+
 // AssetsPendingError conveys sanitized asset settlement blocker reasons while
 // unwrapping to ErrAssetsPending.
 type AssetsPendingError struct {
@@ -84,4 +86,42 @@ func (s *Service) DueClosures(ctx context.Context, p Principal, limit int) ([]Cl
 	callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	return r.DueClosures(callCtx, s.now(), limit)
+}
+
+// ProcessDueClosures is a trusted host maintenance port. It starts expired
+// requests and resumes interrupted work in order, using the existing closure
+// ID for durable effects. Blocked cases remain in the administrator queue.
+func (s *Service) ProcessDueClosures(ctx context.Context, limit int) ([]Closure, error) {
+	if limit < 1 || limit > 100 {
+		return nil, ErrInput
+	}
+	repo, ok := s.repo.(interface {
+		RunnableClosures(context.Context, time.Time, int) ([]Closure, error)
+	})
+	if !ok || s.ClosureEffects == nil {
+		return nil, ErrUnavailable
+	}
+	scanCtx, cancelScan := context.WithTimeout(ctx, 3*time.Second)
+	requests, err := repo.RunnableClosures(scanCtx, s.now(), limit)
+	cancelScan()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Closure, 0, len(requests))
+	var workErr error
+	for _, item := range requests {
+		if ctx.Err() != nil {
+			return results, errors.Join(workErr, ctx.Err())
+		}
+		result, err := s.processClosure(ctx, closureWorker, "due-"+item.ID, item.ID, true)
+		switch {
+		case err == nil:
+			results = append(results, result)
+		case errors.Is(err, ErrNotFound), errors.Is(err, ErrConflict):
+			// Another actor may have changed the candidate since the scan.
+		default:
+			workErr = errors.Join(workErr, err)
+		}
+	}
+	return results, workErr
 }

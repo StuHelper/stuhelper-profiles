@@ -145,7 +145,7 @@ func (r *Repository) UpdateAt(ctx context.Context, who p.Principal, key string, 
 	if state != "active" {
 		return current, p.ErrClosed
 	}
-	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2 AND key=$3 AND created_at<$4`, who.Issuer, who.Subject, key, now.Add(-24*time.Hour)); e != nil {
+	if _, e = tx.ExecContext(ctx, `SELECT profiles.expire_profile_request($1,$2,$3,$4)`, who.Issuer, who.Subject, key, now); e != nil {
 		return current, p.ErrUnavailable
 	}
 	b, _ := json.Marshal(in)

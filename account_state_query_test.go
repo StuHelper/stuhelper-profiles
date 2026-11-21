@@ -54,7 +54,7 @@ func TestAccountStateIsolationClosureErasureAndInformationQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	role := name + "_runtime"
-	if _, err = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;`); err != nil {
+	if _, err = owner.Exec(runtimeRoleSQL(role)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

@@ -18,6 +18,8 @@ CREATE INDEX IF NOT EXISTS profiles_closures_owner_created_idx ON profiles.closu
 CREATE INDEX IF NOT EXISTS profiles_closures_created_id_idx ON profiles.closures(created_at ASC,id ASC);
 CREATE INDEX IF NOT EXISTS profiles_closures_state_created_id_idx ON profiles.closures(state,created_at ASC,id ASC);
 CREATE INDEX IF NOT EXISTS profiles_closures_due_idx ON profiles.closures(created_at ASC,id ASC) WHERE state IN('cooling','awaiting_assets','processing');
+CREATE INDEX IF NOT EXISTS profiles_closures_runnable_idx ON profiles.closures(created_at,id)
+ WHERE state IN('cooling','awaiting_assets','processing') AND COALESCE(result->>'blocker','')='';
 CREATE TABLE IF NOT EXISTS profiles.closure_requests(actor_issuer text NOT NULL,actor_subject text NOT NULL,key text NOT NULL,action text NOT NULL,target text NOT NULL,result jsonb NOT NULL,PRIMARY KEY(actor_issuer,actor_subject,key));
 CREATE TABLE IF NOT EXISTS profiles.closure_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,closure_id text NOT NULL,action text NOT NULL,actor_issuer text NOT NULL,actor_subject text NOT NULL,created_at timestamptz NOT NULL);
 CREATE INDEX IF NOT EXISTS profiles_closure_events_closure_idx ON profiles.closure_events(closure_id,id);
@@ -103,7 +105,7 @@ func (r *Repository) ChangeClosure(ctx context.Context, actor p.Principal, key, 
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,734125))`, string(lockKey)); e != nil {
 		return out, p.ErrUnavailable
 	}
-	if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2 AND key=$3 AND created_at<$4`, actor.Issuer, actor.Subject, key, now.Add(-24*time.Hour)); e != nil {
+	if _, e = tx.ExecContext(ctx, `SELECT profiles.expire_closure_request($1,$2,$3,$4)`, actor.Issuer, actor.Subject, key, now); e != nil {
 		return out, p.ErrUnavailable
 	}
 	var savedAction, target string
@@ -325,12 +327,6 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 			if e = tx.QueryRowContext(ctx, `UPDATE profiles.profiles SET account_state='closed',nickname='',bio='',avatar_version_id=NULL,visibility=$3,group_card_consent=$4,revision=revision+1 WHERE issuer=$1 AND subject=$2 RETURNING revision`, who.Issuer, who.Subject, visibility, consent).Scan(&rev); e != nil {
 				return out, p.ErrUnavailable
 			}
-			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.requests WHERE issuer=$1 AND subject=$2`, who.Issuer, who.Subject); e != nil {
-				return out, p.ErrUnavailable
-			}
-			if _, e = tx.ExecContext(ctx, `DELETE FROM profiles.closure_requests WHERE actor_issuer=$1 AND actor_subject=$2`, who.Issuer, who.Subject); e != nil {
-				return out, p.ErrUnavailable
-			}
 			if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.events(issuer,subject,revision,kind,created_at) VALUES($1,$2,$3,'closed',$4)`, who.Issuer, who.Subject, rev, now); e != nil {
 				return out, p.ErrUnavailable
 			}
@@ -343,6 +339,11 @@ func (r *Repository) AdvanceClosureByWithReasons(ctx context.Context, actor p.Pr
 	raw, _ := json.Marshal(out)
 	if _, e = tx.ExecContext(ctx, `UPDATE profiles.closures SET state=$2,result=$3,updated_at=$4,processing_until=NULL WHERE id=$1`, id, out.State, raw, now); e != nil {
 		return out, p.ErrUnavailable
+	}
+	if out.State == "closed" {
+		if _, e = tx.ExecContext(ctx, `SELECT profiles.erase_closed_account_requests($1,$2)`, who.Issuer, who.Subject); e != nil {
+			return out, p.ErrUnavailable
+		}
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO profiles.closure_events(closure_id,action,actor_issuer,actor_subject,created_at) VALUES($1,$2,$3,$4,$5)`, id, steps[step]+":"+blocker, actor.Issuer, actor.Subject, now); e != nil {
 		return out, p.ErrUnavailable

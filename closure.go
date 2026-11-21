@@ -196,6 +196,10 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 	if e := s.authorizeClosure(ctx, p); e != nil {
 		return Closure{}, e
 	}
+	return s.processClosure(ctx, p, key, id, false)
+}
+
+func (s *Service) processClosure(ctx context.Context, p Principal, key, id string, automatic bool) (Closure, error) {
 	if !validClosureKey(key) || !validUUID(id) {
 		return Closure{}, ErrInput
 	}
@@ -219,7 +223,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 		return v, e
 	}
 	v = record.Closure
-	if v.State == "closed" || (waitedLocal && v.Revision != initialRevision && v.Blocker != "") {
+	if v.State == "closed" || ((automatic || (waitedLocal && v.Revision != initialRevision)) && v.Blocker != "") {
 		return v, nil
 	}
 	leaser, hasLeaser := r.(closureStepLeaser)
@@ -237,7 +241,7 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 				record = rec
 				v = rec.Closure
 				if leased {
-					if waitedPeer && v.Revision != initialRevision && v.Blocker != "" {
+					if (automatic || (waitedPeer && v.Revision != initialRevision)) && v.Blocker != "" {
 						relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 						_ = leaser.ReleaseClosureStep(relCtx, id)
 						cancelRel()
@@ -310,6 +314,16 @@ func (s *Service) ProcessClosure(ctx context.Context, p Principal, key, id strin
 				}
 			}
 			cancel()
+		}
+		// Stopping the worker is not a dependency failure. Leave an uncertain
+		// step eligible for a new process to reconcile with the same closure ID.
+		if automatic && err != nil && ctx.Err() != nil {
+			if hasLeaser {
+				relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+				_ = leaser.ReleaseClosureStep(relCtx, id)
+				cancelRel()
+			}
+			return v, ctx.Err()
 		}
 		blocker := ""
 		if err != nil {

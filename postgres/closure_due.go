@@ -2,12 +2,23 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	p "github.com/StuHelper/stuhelper-profiles"
 	"time"
 )
 
 func (r *Repository) DueClosures(ctx context.Context, now time.Time, limit int) ([]p.Closure, error) {
+	return r.dueClosures(ctx, now, limit, false)
+}
+
+// RunnableClosures excludes cases already assigned to the administrator queue
+// and requests with a live processing lease on another process.
+func (r *Repository) RunnableClosures(ctx context.Context, now time.Time, limit int) ([]p.Closure, error) {
+	return r.dueClosures(ctx, now, limit, true)
+}
+
+func (r *Repository) dueClosures(ctx context.Context, now time.Time, limit int, automatic bool) ([]p.Closure, error) {
 	if now.IsZero() || limit < 1 || limit > 100 {
 		return nil, p.ErrInput
 	}
@@ -20,22 +31,20 @@ func (r *Repository) DueClosures(ctx context.Context, now time.Time, limit int) 
 	var cursorAt time.Time
 	var cursorID string
 	cutoff := now.Add(-7*24*time.Hour + time.Millisecond)
+	query := `SELECT created_at,id,result FROM profiles.closures
+ WHERE (state IN('awaiting_assets','processing') OR (state='cooling' AND created_at<=$1))`
+	if automatic {
+		query += ` AND COALESCE(result->>'blocker','')='' AND (processing_until IS NULL OR processing_until<=clock_timestamp())`
+	}
 
 	for len(out) < limit {
 		batch := limit - len(out)
-		var (
-			rows interface {
-				Next() bool
-				Scan(...any) error
-				Err() error
-				Close() error
-			}
-			err error
-		)
+		var rows *sql.Rows
+		var err error
 		if hasCursor {
-			rows, err = r.DB.QueryContext(ctx, `SELECT created_at,id,result FROM profiles.closures WHERE (created_at,id)>($1,$2) AND (state IN('awaiting_assets','processing') OR (state='cooling' AND created_at<=$3)) ORDER BY created_at ASC,id ASC LIMIT $4`, cursorAt, cursorID, cutoff, batch)
+			rows, err = r.DB.QueryContext(ctx, query+` AND (created_at,id)>($3,$4) ORDER BY created_at,id LIMIT $2`, cutoff, batch, cursorAt, cursorID)
 		} else {
-			rows, err = r.DB.QueryContext(ctx, `SELECT created_at,id,result FROM profiles.closures WHERE state IN('awaiting_assets','processing') OR (state='cooling' AND created_at<=$1) ORDER BY created_at ASC,id ASC LIMIT $2`, cutoff, batch)
+			rows, err = r.DB.QueryContext(ctx, query+` ORDER BY created_at,id LIMIT $2`, cutoff, batch)
 		}
 		if err != nil {
 			return nil, p.ErrUnavailable

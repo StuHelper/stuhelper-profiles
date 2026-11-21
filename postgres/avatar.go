@@ -42,6 +42,32 @@ func (r *Repository) ReplayUpdate(ctx context.Context, who p.Principal, key stri
 	return out, true, nil
 }
 
+func (r *Repository) PendingAvatarReleaseOwners(ctx context.Context, after p.Principal, limit int) ([]p.Principal, error) {
+	if (after != (p.Principal{}) && !after.Valid()) || limit < 1 || limit > 100 {
+		return nil, p.ErrInput
+	}
+	rows, err := r.DB.QueryContext(ctx, `SELECT DISTINCT a.issuer,a.subject FROM profiles.avatar_releases a
+ WHERE (a.issuer,a.subject)>($1,$2) AND NOT EXISTS (
+  SELECT 1 FROM profiles.profiles v WHERE v.issuer=a.issuer AND v.subject=a.subject AND v.avatar_version_id=a.version_id
+ ) ORDER BY a.issuer,a.subject LIMIT $3`, after.Issuer, after.Subject, limit)
+	if err != nil {
+		return nil, p.ErrUnavailable
+	}
+	defer rows.Close()
+	var owners []p.Principal
+	for rows.Next() {
+		var owner p.Principal
+		if err := rows.Scan(&owner.Issuer, &owner.Subject); err != nil || !owner.Valid() {
+			return nil, p.ErrUnavailable
+		}
+		owners = append(owners, owner)
+	}
+	if rows.Err() != nil {
+		return nil, p.ErrUnavailable
+	}
+	return owners, nil
+}
+
 func (r *Repository) PendingAvatarReleases(ctx context.Context, who p.Principal) ([]p.AvatarRelease, error) {
 	rows, e := r.avatarDB(ctx).QueryContext(ctx, `SELECT a.profile_id,a.version_id FROM profiles.avatar_releases a
  WHERE a.issuer=$1 AND a.subject=$2 AND NOT EXISTS (
