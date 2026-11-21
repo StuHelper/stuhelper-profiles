@@ -78,6 +78,7 @@ scenario_tests:
     - group_card_test.go#TestGroupCardConsentAuthorizationAndTransaction
     - validation_boundary_test.go#TestInputEncodingUUIDIdempotencyGroupCardAndBioSafety
   PC-13:
+    - closure_completion_test.go#TestClosureCompletionSurvivesCleanupAndRestart
     - closure_due_test.go#TestProcessDueClosuresAtDeadlineResumesAfterRestartAndLeavesBlockedCasesForAdmin
     - closure_due_test.go#TestDueClosureWorkerContinuesPastInvalidRecords
     - closure_concurrency_idempotency_test.go#TestExpiredClosureWorkerCannotAdvanceOrReleaseReplacementLease

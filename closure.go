@@ -37,6 +37,14 @@ type ClosureRecord struct {
 	Owner   Principal
 }
 
+// ClosureCompletion is the minimum fact needed by the host to apply the
+// completed account's retention rules in its own module.
+type ClosureCompletion struct {
+	ClosureID   string
+	Owner       Principal
+	CompletedAt time.Time
+}
+
 // Ports must reconcile an unknown result before retrying a write. Every step is
 // permanently idempotent for the closure ID, including after a caller times out.
 // Assets atomically freezes future financial writes and certifies settlement.

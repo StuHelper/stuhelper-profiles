@@ -26,7 +26,11 @@ CREATE TABLE IF NOT EXISTS profiles.events(id bigint GENERATED ALWAYS AS IDENTIT
 CREATE INDEX IF NOT EXISTS profiles_events_owner_created_idx ON profiles.events(issuer,subject,created_at DESC);
 CREATE INDEX IF NOT EXISTS profiles_events_owner_id_idx ON profiles.events(issuer,subject,id DESC);`
 
-type Repository struct{ DB *sql.DB }
+type Repository struct {
+	DB *sql.DB
+
+	captureClosureCompletions bool
+}
 
 func Migrate(ctx context.Context, db *sql.DB) error {
 	tx, e := db.BeginTx(ctx, nil)
@@ -37,7 +41,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+retentionSchema+avatarSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+retentionSchema+avatarSchema+closureCompletionSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
