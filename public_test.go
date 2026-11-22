@@ -40,7 +40,7 @@ func TestPublicProfileDefaultsUnicodeCompletionAndVisibility(t *testing.T) {
 		t.Fatal(e)
 	}
 	role := name + "_runtime"
-	if _, e = owner.Exec(`CREATE ROLE ` + role + ` LOGIN;REVOKE ALL ON SCHEMA public FROM PUBLIC;GRANT USAGE ON SCHEMA profiles TO ` + role + `;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA profiles TO ` + role + `;GRANT USAGE ON ALL SEQUENCES IN SCHEMA profiles TO ` + role + `;CREATE SCHEMA foreign_data;CREATE TABLE foreign_data.secret(value text);`); e != nil {
+	if _, e = owner.Exec(runtimeRoleSQL(role) + `CREATE SCHEMA foreign_data;CREATE TABLE foreign_data.secret(value text);`); e != nil {
 		t.Fatal(e)
 	}
 	defer func() { owner.Close(); db.Exec(`DROP DATABASE ` + name + ` WITH(FORCE)`); db.Exec(`DROP ROLE ` + role) }()
