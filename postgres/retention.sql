@@ -78,6 +78,17 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION profiles.erase_closed_account_requests(text,text) FROM PUBLIC;
 
+ALTER TABLE profiles.profiles ADD COLUMN IF NOT EXISTS closed_account_at timestamptz;
+WITH recovered AS (
+UPDATE profiles.profiles p SET closed_account_at=(c.result->>'completed_at')::timestamptz FROM profiles.closures c
+ WHERE p.account_state='closed' AND p.closed_account_at IS NULL AND p.issuer=c.issuer AND p.subject=c.subject
+ AND c.state='closed' AND c.result->>'completed_at' IS NOT NULL
+ RETURNING c.id,p.issuer,p.subject,p.closed_account_at
+)
+INSERT INTO profiles.closure_completions(closure_id,issuer,subject,completed_at)
+ SELECT id,issuer,subject,closed_account_at FROM recovered ON CONFLICT DO NOTHING;
+CREATE INDEX IF NOT EXISTS profiles_closed_expiry ON profiles.profiles(closed_account_at,issuer,subject) WHERE closed_account_at IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION profiles.cleanup_expired(requested_at timestamptz, batch_limit integer)
 RETURNS TABLE(requests_deleted integer, closure_requests_deleted integer, closures_deleted integer, closure_events_deleted integer)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog SET TimeZone='UTC' AS $$
@@ -115,6 +126,18 @@ BEGIN
  DELETE FROM profiles.closures c WHERE c.id=ANY(expired_ids)
   AND NOT EXISTS (SELECT 1 FROM profiles.closure_events e WHERE e.closure_id=c.id);
  GET DIAGNOSTICS closures_deleted = ROW_COUNT;
+ -- Preserve the owner while completion delivery or avatar release is outstanding.
+ WITH due AS (
+   SELECT issuer,subject FROM profiles.profiles p WHERE account_state='closed'
+   AND ((closed_account_at AT TIME ZONE 'Asia/Shanghai')+interval '12 months') AT TIME ZONE 'Asia/Shanghai' <= effective_time
+   AND NOT EXISTS(SELECT 1 FROM profiles.closure_completions c WHERE c.issuer=p.issuer AND c.subject=p.subject)
+   AND NOT EXISTS(SELECT 1 FROM profiles.avatar_releases v WHERE v.issuer=p.issuer AND v.subject=p.subject)
+   ORDER BY closed_account_at,issuer,subject LIMIT batch_limit FOR UPDATE SKIP LOCKED
+ ), old_events AS (
+   SELECT e.id FROM profiles.events e JOIN due USING(issuer,subject) ORDER BY e.id LIMIT batch_limit
+ ), removed AS (DELETE FROM profiles.events e USING old_events WHERE e.id=old_events.id)
+ DELETE FROM profiles.profiles p USING due WHERE p.issuer=due.issuer AND p.subject=due.subject
+   AND NOT EXISTS(SELECT 1 FROM profiles.events e WHERE e.issuer=p.issuer AND e.subject=p.subject);
  RETURN NEXT;
 END;
 $$;

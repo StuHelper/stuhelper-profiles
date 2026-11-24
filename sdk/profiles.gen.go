@@ -23,9 +23,11 @@ const (
 	ClosureBlockerAssetsPending             ClosureBlocker = "assets_pending"
 	ClosureBlockerAssetsUnavailable         ClosureBlocker = "assets_unavailable"
 	ClosureBlockerAuthorizationsUnavailable ClosureBlocker = "authorizations_unavailable"
+	ClosureBlockerBackgroundProcessing      ClosureBlocker = "background_processing"
 	ClosureBlockerContentUnavailable        ClosureBlocker = "content_unavailable"
 	ClosureBlockerEmpty                     ClosureBlocker = ""
 	ClosureBlockerSessionsUnavailable       ClosureBlocker = "sessions_unavailable"
+	ClosureBlockerStorageDraining           ClosureBlocker = "storage_draining"
 )
 
 // Valid indicates whether the value is a known member of the ClosureBlocker enum.
@@ -37,11 +39,15 @@ func (e ClosureBlocker) Valid() bool {
 		return true
 	case ClosureBlockerAuthorizationsUnavailable:
 		return true
+	case ClosureBlockerBackgroundProcessing:
+		return true
 	case ClosureBlockerContentUnavailable:
 		return true
 	case ClosureBlockerEmpty:
 		return true
 	case ClosureBlockerSessionsUnavailable:
+		return true
+	case ClosureBlockerStorageDraining:
 		return true
 	default:
 		return false
@@ -260,8 +266,10 @@ const (
 	ListClosuresParamsBlockerAssetsPending             ListClosuresParamsBlocker = "assets_pending"
 	ListClosuresParamsBlockerAssetsUnavailable         ListClosuresParamsBlocker = "assets_unavailable"
 	ListClosuresParamsBlockerAuthorizationsUnavailable ListClosuresParamsBlocker = "authorizations_unavailable"
+	ListClosuresParamsBlockerBackgroundProcessing      ListClosuresParamsBlocker = "background_processing"
 	ListClosuresParamsBlockerContentUnavailable        ListClosuresParamsBlocker = "content_unavailable"
 	ListClosuresParamsBlockerSessionsUnavailable       ListClosuresParamsBlocker = "sessions_unavailable"
+	ListClosuresParamsBlockerStorageDraining           ListClosuresParamsBlocker = "storage_draining"
 )
 
 // Valid indicates whether the value is a known member of the ListClosuresParamsBlocker enum.
@@ -273,9 +281,13 @@ func (e ListClosuresParamsBlocker) Valid() bool {
 		return true
 	case ListClosuresParamsBlockerAuthorizationsUnavailable:
 		return true
+	case ListClosuresParamsBlockerBackgroundProcessing:
+		return true
 	case ListClosuresParamsBlockerContentUnavailable:
 		return true
 	case ListClosuresParamsBlockerSessionsUnavailable:
+		return true
+	case ListClosuresParamsBlockerStorageDraining:
 		return true
 	default:
 		return false

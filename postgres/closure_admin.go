@@ -169,3 +169,11 @@ func (r *Repository) QueryClosureEvents(ctx context.Context, closureID string, h
 	}
 	return out, nil
 }
+
+// ClosureAlerts returns only the presence of unresolved, due blockers.
+func (r *Repository) ClosureAlerts(ctx context.Context) (assets, dependencies bool, err error) {
+	err = r.DB.QueryRowContext(ctx, `SELECT
+ EXISTS(SELECT 1 FROM profiles.closures WHERE state IN ('processing','awaiting_assets') AND result->>'blocker'='assets_pending'),
+ EXISTS(SELECT 1 FROM profiles.closures WHERE state IN ('processing','awaiting_assets') AND coalesce(result->>'blocker','') NOT IN ('','assets_pending','background_processing'))`).Scan(&assets, &dependencies)
+	return
+}

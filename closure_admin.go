@@ -12,7 +12,7 @@ import (
 
 var (
 	validClosureStates   = []string{"cooling", "cancelled", "awaiting_assets", "processing", "closed"}
-	validClosureBlockers = []string{"assets_unavailable", "assets_pending", "sessions_unavailable", "authorizations_unavailable", "content_unavailable"}
+	validClosureBlockers = []string{"assets_unavailable", "assets_pending", "sessions_unavailable", "authorizations_unavailable", "content_unavailable", "storage_draining", "background_processing"}
 )
 
 type ClosureFilter struct {

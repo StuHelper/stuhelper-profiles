@@ -9,6 +9,8 @@ import (
 
 var ErrClosed = errors.New("business_account_closed")
 var ErrForbidden = errors.New("closure_forbidden")
+var ErrStorageDraining = errors.New("closure_storage_draining")
+var ErrClosureProgress = errors.New("closure_background_processing")
 var ErrAssetsPending = errors.New("closure_assets_pending")
 
 const PointsPolicy = "forfeit_all_points_and_pending_deductions"
@@ -123,6 +125,20 @@ func (s *Service) RequestClosure(ctx context.Context, p Principal, key string, a
 	if e != nil {
 		return Closure{}, e
 	}
+	if s.CoolingControl != nil {
+		work, ok := r.(coolingRepository)
+		if !ok {
+			return Closure{}, ErrUnavailable
+		}
+		item, err := work.PrepareCooling(ctx, p, key, s.now())
+		if err != nil {
+			return Closure{}, err
+		}
+		if item.ClosureID != "" {
+			return s.applyCooling(ctx, work, item)
+		}
+		return work.ChangeCooling(ctx, p, key, "request", "", s.now())
+	}
 	return r.ChangeClosure(ctx, p, key, "request", "", s.now())
 }
 func (s *Service) CancelClosure(ctx context.Context, p Principal, key, id string) (Closure, error) {
@@ -132,6 +148,18 @@ func (s *Service) CancelClosure(ctx context.Context, p Principal, key, id string
 	r, e := s.closureRepository()
 	if e != nil {
 		return Closure{}, e
+	}
+	if s.CoolingControl != nil {
+		work, ok := r.(coolingRepository)
+		if !ok {
+			return Closure{}, ErrUnavailable
+		}
+		result, err := work.ChangeCooling(ctx, p, key, "cancel", id, s.now())
+		if err != nil {
+			return Closure{}, err
+		}
+		_, err = s.applyCooling(ctx, work, CoolingIntent{Owner: p, ClosureID: id, Key: key, Cancelled: true})
+		return result, err
 	}
 	return r.ChangeClosure(ctx, p, key, "cancel", id, s.now())
 }
@@ -254,7 +282,7 @@ func (s *Service) processClosure(ctx context.Context, p Principal, key, id strin
 				v = rec.Closure
 				if token != "" {
 					lease = token
-					if (automatic || (waitedPeer && v.Revision != initialRevision)) && v.Blocker != "" {
+					if (automatic || (waitedPeer && v.Revision != initialRevision)) && v.Blocker != "" && v.Blocker != "background_processing" {
 						relCtx, cancelRel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 						_ = leaser.ReleaseClosureStep(relCtx, id, lease)
 						cancelRel()
@@ -341,6 +369,12 @@ func (s *Service) processClosure(ctx context.Context, p Principal, key, id strin
 		blocker := ""
 		if err != nil {
 			blocker = name + "_unavailable"
+			if errors.Is(err, ErrStorageDraining) {
+				blocker = "storage_draining"
+			}
+			if errors.Is(err, ErrClosureProgress) {
+				blocker = "background_processing"
+			}
 			if name == "assets" && errors.Is(err, ErrAssetsPending) {
 				blocker = "assets_pending"
 				pendingReasons = extractPendingReasons(pendingReasons, err)
