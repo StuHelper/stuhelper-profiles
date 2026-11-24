@@ -254,7 +254,7 @@ export interface components {
             completed_at?: string;
             completed_steps: ("assets" | "sessions" | "authorizations" | "content")[];
             /** @enum {string} */
-            blocker: "" | "assets_unavailable" | "assets_pending" | "sessions_unavailable" | "authorizations_unavailable" | "content_unavailable";
+            blocker: "" | "assets_unavailable" | "assets_pending" | "sessions_unavailable" | "authorizations_unavailable" | "content_unavailable" | "storage_draining" | "background_processing";
             /** @enum {string} */
             points_policy: "forfeit_all_points_and_pending_deductions";
             /**
@@ -1055,7 +1055,7 @@ export interface operations {
                 state?: "cooling" | "cancelled" | "awaiting_assets" | "processing" | "closed";
                 /** @description When true, returns only closures ready for approval after the seven-day cooling period or awaiting retry. */
                 actionable?: boolean;
-                blocker?: "assets_unavailable" | "assets_pending" | "sessions_unavailable" | "authorizations_unavailable" | "content_unavailable";
+                blocker?: "assets_unavailable" | "assets_pending" | "sessions_unavailable" | "authorizations_unavailable" | "content_unavailable" | "storage_draining" | "background_processing";
             };
             header?: never;
             path?: never;

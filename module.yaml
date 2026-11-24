@@ -1,5 +1,5 @@
 id: profiles
-version: 0.5.0
+version: 0.6.0
 kind: module
 api: 1
 critical: false
@@ -71,6 +71,7 @@ scenario_tests:
     - retention_test.go#TestRetentionCleanupIdempotencyAndCompletedClosures
     - avatar_test.go#TestAvatarMediaLifecyclePublicInformationAndClosureRelease
   PC-09:
+    - cooling_test.go#TestCoolingWaitsForStorageAndRestoresAfterCancellationRestart
     - closure_test.go#TestClosureCoolingCancellationSettlementFailureAndConcurrentRecovery
     - closure_concurrency_idempotency_test.go#TestClosureLeaseDisconnectPersistenceReplayAndAudit
   PC-12:

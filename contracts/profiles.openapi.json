@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper Profiles",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "paths": {
     "/api/v1/profiles/me": {
@@ -1117,7 +1117,9 @@
                 "assets_pending",
                 "sessions_unavailable",
                 "authorizations_unavailable",
-                "content_unavailable"
+                "content_unavailable",
+                "storage_draining",
+                "background_processing"
               ]
             }
           }
@@ -1437,7 +1439,9 @@
               "assets_pending",
               "sessions_unavailable",
               "authorizations_unavailable",
-              "content_unavailable"
+              "content_unavailable",
+              "storage_draining",
+              "background_processing"
             ]
           },
           "points_policy": {
