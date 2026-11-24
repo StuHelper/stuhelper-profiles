@@ -53,7 +53,7 @@ func (r *Repository) dueClosures(ctx context.Context, now time.Time, after p.Clo
 	query := `SELECT created_at,id,result FROM profiles.closures
  WHERE (state IN('awaiting_assets','processing') OR (state='cooling' AND created_at<=$1))`
 	if automatic {
-		query += ` AND COALESCE(result->>'blocker','')='' AND (processing_until IS NULL OR processing_until<=clock_timestamp())`
+		query += ` AND COALESCE(result->>'blocker','') IN ('','background_processing') AND (processing_until IS NULL OR processing_until<=clock_timestamp())`
 	}
 
 	for len(out) < limit {

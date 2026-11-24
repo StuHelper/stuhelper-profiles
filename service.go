@@ -131,6 +131,7 @@ type Service struct {
 	Now              func() time.Time
 	ClosureAuthority ClosureAuthority
 	ClosureEffects   ClosureEffects
+	CoolingControl   CoolingControl
 	Facts            PublicFacts
 	closureMu        sync.Mutex
 	closureTurns     map[string]chan struct{}

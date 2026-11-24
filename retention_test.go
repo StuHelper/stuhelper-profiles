@@ -244,9 +244,10 @@ func TestRetentionCleanupIdempotencyAndCompletedClosures(t *testing.T) {
 	if _, e = repo.Closure(ctx, cClosed.ID); !errors.Is(e, p.ErrNotFound) {
 		t.Fatal("expired closed closure was not deleted", e)
 	}
-	// Closed account marker in profiles.profiles MUST remain to block reopening!
-	if _, e = s.Ensure(ctx, closedUser, "ReopenAttempt"); !errors.Is(e, p.ErrClosed) {
-		t.Fatal("closed account marker lost after history cleanup", e)
+	// The Identity provider allocates a distinct owner after the retention period.
+	var markers int
+	if e = owner.QueryRow("SELECT count(*) FROM profiles.profiles WHERE issuer=$1 AND subject=$2", closedUser.Issuer, closedUser.Subject).Scan(&markers); e != nil || markers != 0 {
+		t.Fatal("expired profile marker retained", markers, e)
 	}
 	if e = postgres.Migrate(ctx, owner); e != nil {
 		t.Fatal("repeat migration failed", e)
