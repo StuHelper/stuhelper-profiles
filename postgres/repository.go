@@ -41,7 +41,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, e = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(726391840107)`); e != nil {
 		return e
 	}
-	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+retentionSchema+avatarSchema+closureCompletionSchema+coolingSchema); e != nil {
+	if _, e = tx.ExecContext(ctx, Schema+groupCardSchema+closureSchema+closureCompletionSchema+retentionSchema+avatarSchema+coolingSchema); e != nil {
 		return e
 	}
 	return tx.Commit()
